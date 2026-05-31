@@ -4,6 +4,8 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <fstream>
+#include <chrono>
 
 #if !defined(_ANI_MIC_H) 
 
@@ -19,7 +21,10 @@ public:
   inline void convert_int16_to_pcm( uint32_t _frames, const int16_t* src, float_t* dest );
   inline uint32_t seconds_to_frames( uint32_t _seconds, uint32_t _sample_rate );
   inline uint32_t frames_to_bytes( uint32_t _frames, uint32_t _channels, uint32_t _bytes_per_sample );
-  const std::vector<float>& voice( uint32_t sec );
+  const std::vector<float>& voice_in_parts( uint32_t sec );
+  const std::vector<float>& voice( uint32_t seconds );
+  void clear_voice( );
+  void clear_cache( );
 private:
   snd_pcm_hw_params_t* params;
   snd_pcm_t* handle;
