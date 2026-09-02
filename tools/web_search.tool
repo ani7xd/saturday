@@ -1,0 +1,1 @@
+{"type":"function","function":{"name":"web_search","description":"Search the internet for current or external information such as recent news, documentation, software versions, prices, websites, or factual information.","parameters":{"type":"object","properties":{"query":{"type":"string","description":"The search query to execute."}},"required":["query"]}}}

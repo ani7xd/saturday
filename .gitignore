@@ -1,3 +1,14 @@
 build/
 libs/
 .CMakeLists.txt
+obj/
+test/
+models/
+marionette/
+images/
+creds/
+files/
+.vscode/
+project/
+main2.cpp
+

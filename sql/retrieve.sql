@@ -1,0 +1,1 @@
+SELECT role, message_type, message, images FROM chat ORDER BY id;

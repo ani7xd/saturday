@@ -38,5 +38,9 @@ private:
   float_t scale;
 };
 
+class microphone {
+  
+};
+
 #define _ANI_MIC_H
 #endif
