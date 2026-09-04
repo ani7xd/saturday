@@ -1,4 +1,4 @@
-#include "conversation.h"
+#include "tool_manager.h"
 #include <chrono>
 #include <format>
 #include <filesystem>
@@ -17,23 +17,25 @@ size_t model_stream_speak_callback( char* ptr, size_t size, size_t nmemb, void* 
 void make_prompt( std::string& root, std::string_view value, std::string& ret );
 
 constexpr std::string_view THINKING = "\033[2;37m";
-constexpr std::string_view RESET    = "\033[0m";
-constexpr std::string_view TOOL     = "\033[1;34m";
 
 struct context {
   simdjson::ondemand::parser parser;
-  simdjson::padded_string json_str;
+  simdjson::padded_string j_str;
   simdjson::fallback::ondemand::document_stream::iterator::value_type json;
+  simdjson::simdjson_result<simdjson::fallback::ondemand::value> think;
   memory* conversation;
-  bool tool_call;
+  bool is_thinking;
+  bool is_responding;
+  std::string full_response;
+  std::string buffer;
   std::string response;
-  std::string response_buffer;
-  std::string function;
-  // std::string parameter;
-  std::string tool_arguments_json;
-  std::string tool_name;
-  std::string tool_id;
+  tool_context tool;
   void* ctx;
+
+  void parse_json( std::string_view );
+  void thinking( std::string_view );
+  void responding( std::string_view );
+  context( ) : tool( ) { }
 };
 
 enum class stream_state {
@@ -49,30 +51,30 @@ enum class stream_state {
 //   piper_audio_chunk chunk;
 // };
 
-struct stream_context {
-  std::string full_response;
-  std::string buffer;
-  std::string response;
-  simdjson::ondemand::parser parser;
-  simdjson::padded_string j_str;
-  simdjson::fallback::ondemand::document_stream::iterator::value_type json;
-  simdjson::simdjson_result<simdjson::fallback::ondemand::value> think;
-  bool thinking;
-  bool responding;
-  bool tool_call;
-  stream_state state;
-  memory* conversation;
-  std::string tool_arguments_json;
-  std::string tool_name;
-  std::string tool_id;
-  tool_context tool;
-  // audio_chunk audio;
-  sound* speaker;
-  void* ctx;
-  stream_context( ) : thinking( false ), responding( false ), tool_call( false ) { };
-};
+// struct stream_context {
+//   std::string full_response;
+//   std::string buffer;
+//   std::string response;
+//   simdjson::ondemand::parser parser;
+//   simdjson::padded_string j_str;
+//   simdjson::fallback::ondemand::document_stream::iterator::value_type json;
+//   simdjson::simdjson_result<simdjson::fallback::ondemand::value> think;
+//   bool thinking;
+//   bool responding;
+//   // bool tool_call;
+//   stream_state state;
+//   memory* conversation;
+//   // std::string tool_arguments_json;
+//   // std::string tool_name;
+//   // std::string tool_id;
+//   tool_context tool;
+//   // audio_chunk audio;
+//   // sound* speaker;
+//   void* ctx;
+//   stream_context( ) : thinking( false ), responding( false ), tool( ) { };
+// };
 
-void calling_tool( std::string_view str );
+
 
 class model {
 public:
@@ -86,7 +88,9 @@ public:
   void send_prompt( std::string_view prompt, const std::vector<std::string>& path );
   void set_system_prompt( std::string_view system );
   void parse_response( context* chat );
-  void handle_tool_call_stream( stream_context* context );
+
+  void tool_call( tool_context* tool_ctx );
+  // void handle_tool_call_stream( stream_context* context );
   void speak_my_lil_nigga( const std::string& str );
 public:
   model( );
@@ -95,11 +99,9 @@ public:
   ~model( );
 private:
   http req;
-  client_worker web;
-  client_worker client;
   tool_manager tools;
-  stream_context model_stream;
-  context chat_context;
+  context model_context;
+  // context chat_context;
   memory conversation;
   fetched_resource url_result;
   llhttp_t http_parser;

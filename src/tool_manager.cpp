@@ -11,39 +11,49 @@ void tool_manager::get_global_time( std::string region ) {
 
 }
 
-void tool_manager::connect_to_tcp( const std::string& ip, short port ) {
-  cl.connect( ip, port );
+void tool_manager::connect_to_tcp( const std::string& ip, short port, std::string& ret ) {
+  if ( cl.connect( ip, port ) == 0 ) {
+    ret = "log: connected successfully";
+    return;
+  }
+  ret = "error: failed to connect: ";
+  ret += cl.error_str;
 }
 
 void tool_manager::send_data_tcp( std::string_view data, std::string& ret ) {
-  cl.send( data );
-  cl.recv( );
-  ret += buffer;
-  buffer.clear( );
-}
-
-void tool_manager::tool_open_browser_window_url( std::string url ) {
-  int pid = fork( );
-  int in[2], out[2];
-  if ( pid == 0 ) {
-    char* argv[] = {
-      "waterfox",
-      "--new-tab",
-      url.data( ),
-      nullptr
-    };
-    execvp( "waterfox", argv );
-    perror( "execvp" );
-    exit( -1 );
+  if ( cl.send( data ) == 0 ) {
+    ret = "sent ";
+    ret += std::to_string( data.size( ) );
+    ret += " bytes";
   }
   else {
-    return;
+    ret = "send failed: ";
+    ret += cl.error_str;
   }
 }
 
+// void tool_manager::tool_open_browser_window_url( std::string url ) {
+//   int pid = fork( );
+//   int in[2], out[2];
+//   if ( pid == 0 ) {
+//     char* argv[] = {
+//       "waterfox",
+//       "--new-tab",
+//       url.data( ),
+//       nullptr
+//     };
+//     execvp( "waterfox", argv );
+//     perror( "execvp" );
+//     exit( -1 );
+//   }
+//   else {
+//     return;
+//   }
+// }
+
 void tool_manager::call_tool( tool_context* context, tool_result* ret ) {
-  context->json_str = simdjson::padded_string( context->tool_arguments_json );
-  context->parser.iterate( context->json_str );
+  parse_arguements( context );
+  tool_map[context->tool_name](context);
 }
 
 void tool_manager::parse_arguements( tool_context* context ) {
@@ -71,6 +81,10 @@ void tool_manager::web_search( client_worker* web, std::string_view query ) {
   yyjson_mut_doc_free( doc );
 }
 
+void tool_manager::web_search_google( client_worker* web, std::string_view query ) {
+  
+}
+
 void tool_manager::image_reverse_search( std::string_view data ) {
   
 }
@@ -83,41 +97,40 @@ void tool_manager::image_reverse_search( void* data, size_t len ) {
 
 }
 
-std::string_view tool_manager::trim_web_result_str( std::string_view data ) {
+std::string_view tool_manager::trim_web_result_str( std::string_view data, std::string& ret ) {
   auto j_str = simdjson::padded_string( data );
   auto j = parser.iterate( j_str );
-  this->trimmed_web_result.clear( );
+  ret.clear( );
   std::string_view str = j["query"].get_string( ).value( );
-  this->trimmed_web_result += "Web Search\n\n";
-  this->trimmed_web_result += "Query:\n";
-  this->trimmed_web_result.append( str.data( ), str.size( ) );
-  this->trimmed_web_result += "\n\nQuick Summary:\n";
+  ret += "Web Search\n\n";
+  ret += "Query:\n";
+  ret.append( str.data( ), str.size( ) );
+  ret += "\n\nQuick Summary:\n";
   str = j["answer"].get_string( ).value( );
-  this->trimmed_web_result.append( str.data( ), str.size( ) );
-  this->trimmed_web_result += "\n\nSources:\n";
+  ret.append( str.data( ), str.size( ) );
+  ret += "\n\nSources:\n";
   auto rets = j["results"].get_array( );
 
   int i = 1;
   for ( auto r : rets ) {
-    this->trimmed_web_result += "\n";
-    this->trimmed_web_result += std::to_string( i++ );
-    this->trimmed_web_result += ".\n";
-    this->trimmed_web_result += "URL:\n";
+    ret += "\n";
+    ret += std::to_string( i++ );
+    ret += ".\n";
+    ret += "URL:\n";
     str = r["url"].get_string( ).value( );
-    this->trimmed_web_result.append( str.data( ), str.size( ) );
-    this->trimmed_web_result += "\nTitle:\n";
+    ret.append( str.data( ), str.size( ) );
+    ret += "\nTitle:\n";
     str = r["title"].get_string( ).value( );
-    this->trimmed_web_result.append( str.data(), str.size( ) );
-    this->trimmed_web_result += "\nSnippet:\n";
+    ret.append( str.data(), str.size( ) );
+    ret += "\nSnippet:\n";
     str = r["content"].get_string( ).value( );
-    this->trimmed_web_result.append( str.data( ), str.size( ) );
-    this->trimmed_web_result += "\n";
+    ret.append( str.data( ), str.size( ) );
+    ret += "\n";
   }
-  return this->trimmed_web_result;
+  return ret;
 }
 
-std::string_view tool_manager::trim_web_result( std::string_view data ) {
-  simdjson::ondemand::parser parser;
+std::string_view tool_manager::trim_web_result_json( std::string_view data ) {
   auto j_str = simdjson::padded_string( data );
   auto j = parser.iterate( j_str );
   std::string_view str;
@@ -305,7 +318,7 @@ void tool_manager::list_directories( const std::filesystem::path& path, tool_res
   yyjson_mut_doc_free( doc );
 }
 
-void tool_manager::read_file( std::string path, std::string& contents ) {
+void tool_manager::read_file( const std::string& path, std::string& contents ) {
   if ( !std::filesystem::exists( path ) ) {
     contents = "error: file doesn't exist";
     // store_tool_result_str( "read_file", chat_context.tool_id, "error: file doesn't exist" );
@@ -328,7 +341,7 @@ void tool_manager::read_file( std::string path, std::string& contents ) {
   }
 }
   
-void tool_manager::write_file( std::string path, const std::string& contents ) {
+void tool_manager::write_file( const std::string& path, const std::string& contents ) {
   auto f_path = std::filesystem::path( path );
   if ( !std::filesystem::exists( f_path ) ) {
     if ( f_path.has_parent_path( ) )
@@ -343,6 +356,52 @@ void tool_manager::write_file( std::string path, const std::string& contents ) {
     if ( file.is_open( ) ) {
       file.write( contents.data( ), contents.size( ) );
       file.close( );
+    }
+  }
+}
+
+void tool_manager::write_file( const std::string& path, const std::string_view contents, std::string& ret ) {
+  ret.clear( );
+  ret.reserve( 100 );
+  auto f_path = std::filesystem::path( path );
+  if ( !std::filesystem::exists( f_path ) ) {
+    ret.append( "log: file path doesnt exist\n" );
+    if ( f_path.has_parent_path( ) ) {
+      ret.append( "log: creating parent dirs\n" );
+      std::filesystem::create_directories( f_path.parent_path( ) );
+    }
+    ret.append( "log: creating file " );
+    ret.append( path );
+    ret.append( "\n" );
+    std::ofstream file{ path, std::ios::app };
+    if ( file.is_open( ) ) {
+      ret.append( "log: successfully created and opened the file\n" );
+      file.write( contents.data( ), contents.size( ) );
+      ret.append( "log: written " );
+      ret.append( std::to_string( contents.size( ) ) );
+      ret.append( " bytes\n" );
+      file.close( );
+      return;
+    }
+    else {
+      ret.append( "error: failed to create or open file\n" );
+      return;
+    }
+  } else {
+    ret.append( "log: file exists, trying to append to the file\n" );
+    std::ofstream file{ path, std::ios::app };
+    if ( file.is_open( ) ) {
+      ret.append( "log: successfully opened the file\n" );
+      file.write( contents.data( ), contents.size( ) );
+      ret.append( "log: written " );
+      ret.append( std::to_string( contents.size( ) ) );
+      ret.append( " bytes\n" );
+      file.close( );
+      return;
+    }
+    else {
+      ret.append( "error: failed to open file\n" );
+      return;
     }
   }
 }
@@ -429,12 +488,143 @@ void tool_manager::extract_from_html( lxb_dom_node_t* node, std::string& out ) {
   }
 }
 
-
 std::vector<tool_json>* tool_manager::get_tools( ) {
   return &this->tools;
 }
 
+void tool_manager::load_tools_map( ) {
+  // a more sexy idea would be to add call_tool() with 
+  // unordered map of arguements, and pass parameters to tool
+  // after extracting to map from the json array 
+
+  tool_map.emplace( "web_search", [&](tool_context* context) {
+    // parse_arguements( context );
+    calling_tool( "searching web..." );
+    web_search( &web_client, context->json["query"].get_string( ).value( ) );
+    std::string_view trimmed_web_result_in_str = trim_web_result_str( web_client.buffer, context->result.str );
+    context->context->store_tool_result( 
+      context->tool_name, 
+      context->tool_id, 
+      context->result.str 
+    );
+  });
+    
+  tool_map.emplace( "read_file", [&](tool_context* context) {
+    // parse_arguements( context );
+    std::string path{ context->json["path"].get_string( ).value( ) };
+    calling_tool( "reading file ( " + path + " )..." );
+    read_file( path, context->result.str );
+    context->context->store_tool_result( 
+      context->tool_name, 
+      context->tool_id, 
+      context->result.str 
+    );
+  });
+
+  tool_map.emplace( "get_current_datetime", [&](tool_context* context) {
+    calling_tool( "fetching time..." );
+    get_local_time( context->result.str );
+    context->context->store_tool_result( 
+      context->tool_name, 
+      context->tool_id,
+      context->result.str 
+    );
+  });
+
+  tool_map.emplace( "write_file", [&](tool_context* context) {
+    // parse_arguements( context );
+    std::string path{ context->json["path"].get_string( ).value( ) };
+    calling_tool( "writing to file ( " + path + " )..." );
+    write_file( 
+      path, 
+      context->json["content"].get_string( ).value( ),
+      context->result.str 
+    );
+    context->context->store_tool_result( 
+      context->tool_name, 
+      context->tool_id, 
+      context->result.str 
+    );
+  });
+  
+  tool_map.emplace( "fetch_url", [&](tool_context* context) { 
+    // parse_arguements( context );
+    std::string url{ context->json["url"].get_string( ).value( ) };
+    calling_tool( "fetching url... ( " + url + " )" );
+    fetch_url( &page_client, url, context->result.resource );
+    context->context->store_tool_result( 
+      context->tool_name, 
+      context->tool_id,
+      context->result.resource->body 
+    );
+  });
+  
+  tool_map.emplace( "edit_file", [&](tool_context* context) {
+    // parse_arguements( context );
+    std::string path{ context->json["file"].get_string( ).value( ) };
+    ssize_t c = 1;
+    size_t o = 0;
+    std::string_view old_text, new_text;
+    old_text = context->json["old_text"].get_string( ).value( );
+    new_text = context->json["new_text"].get_string( ).value( );
+    auto count = context->json["occurrence_count"];
+    auto offset = context->json["occurrence_offset"];
+    if ( !count.error( ) ) c = count.get_int64( );
+    if ( !offset.error( ) ) o = offset.get_uint64( );
+    calling_tool( "editing file... ( " + path + " ) ..." );
+    edit_file( path, old_text, new_text, context->result.edit, c, o ); 
+    context->context->store_tool_result( 
+      context->tool_name, 
+      context->tool_id, 
+      { context->result.edit->json, context->result.edit->len } 
+    );
+    context->clear( );
+  });
+  
+  tool_map.emplace( "list_dir", [&](tool_context* context) {
+    // parse_arguements( context );
+    std::string path{ context->json["path"].get_string( ).value( ) };
+    calling_tool( "listing dir ( " + path + " )..." );
+    list_directories( 
+      context->json["path"].get_string( ).value( ), 
+      &context->result 
+    );
+    context->context->store_tool_result( 
+      context->tool_name, 
+      context->tool_id, 
+      { context->result.json, context->result.len } 
+    );
+    context->clear( );
+  });
+  
+  tool_map.emplace( "connect_to_tcp", [&](tool_context* context) {
+    // parse_arguements( context );
+    std::string ip{ context->json["ip"].get_string( ).value( ) };
+    short port = context->json["port"].get_uint32( ).value( );
+    calling_tool( "connecting to ( " + ip + ":" + std::to_string( port ) + " )..." );
+    connect_to_tcp( ip, port, context->result.str );
+    context->context->store_tool_result( 
+      context->tool_name, 
+      context->tool_id,
+      context->result.str );
+  });
+  
+  tool_map.emplace( "send_data_tcp", [&](tool_context* context) {
+    // parse_arguements( context );
+    std::string data;
+    data = context->json["data"].get_string( ).value( );
+    calling_tool( "sending data..." );
+    send_data_tcp( data, context->result.str );
+    context->context->store_tool_result( 
+      context->tool_name, 
+      context->tool_id, 
+      context->result.str 
+    );
+  });
+}
+
 void tool_manager::load_tools( const std::filesystem::path& path ) {
+  load_tools_map( );
   std::ifstream f;
   auto dir = std::filesystem::recursive_directory_iterator( path );
   std::string tool_str;
@@ -446,9 +636,9 @@ void tool_manager::load_tools( const std::filesystem::path& path ) {
         f.seekg( 0, std::ios::end );
         size_t len = f.tellg( );
         f.seekg( 0, std::ios::beg );
-        tool_str.resize( len );
+        if ( len > tool_str.size( ) ) tool_str.resize( len );
         f.read( tool_str.data( ), len );
-        auto doc = yyjson_read( tool_str.data( ), tool_str.size( ), 0 ); 
+        auto doc = yyjson_read( tool_str.data( ), len, 0 );
         auto root = yyjson_doc_get_root( doc );
         this->tools.emplace_back( doc, root );
         f.close( );
@@ -457,26 +647,82 @@ void tool_manager::load_tools( const std::filesystem::path& path ) {
   }
 }
 
+void tool_manager::init( ) {
+  cl.init( );
+  cl.set_receive_cb( client_write_cb );
+  cl.set_receive_cb_ctx( &buffer );
+  web_client.req.initialize( );
+  web_client.req.set_url( "https://api.tavily.com/search" );
+  web_client.req.set_http_method_post( );
+  web_client.req.set_custom_option_list( "Content-Type", "application/json" );
+  std::string key = "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";
+  web_client.req.set_custom_option_list( "Authorization", "Bearer " + key );
+  web_client.req.set_body_write_cb( web_write_cb );
+  web_client.req.set_body_cb_data( &web_client.buffer );
+  web_client.req.set_custom_options( );
+
+  page_client.req.initialize( );
+  page_client.req.set_body_write_cb( web_write_cb );
+  page_client.req.set_body_cb_data( &page_client.buffer );
+  page_client.req.set_header_cb_data( &page_client.header );
+  page_client.req.set_header_write_cb( web_write_cb );
+  page_client.req.set_follow_redirect( true );
+}
+
 tool_manager::tool_manager( ) {
   this->index = 0;
   this->document = lxb_html_document_create( );
-  cl.init( );
-  cl.set_receive_cb( write_cb );
-  cl.set_receive_cb_ctx( &buffer );
+  
 }
 
 tool_manager::~tool_manager( ) {
+  for ( auto& tool : tools )
+    tool.release( );
+}
 
+void tool_json::release( ) {
+  yyjson_doc_free( doc );
 }
 
 tool_json::~tool_json( ) {
   
 }
 
-int write_cb( void* ptr, size_t len, void* ctx ) {
+size_t tool_result::size( ) { 
+  return len; 
+}
+  
+char* tool_result::data( ) { 
+  return json; 
+}
+  
+void tool_result::clear( ) {
+  if ( json != nullptr ) {
+    free( json );
+    json == nullptr;
+  }
+  str.clear( );
+  len = 0;
+};
+
+tool_result::~tool_result( ) {
+  if ( json != nullptr ) free( json );
+}
+
+size_t web_write_cb( char* ptr, size_t size, size_t nmemb, void* userdata ) {
+  auto* str = static_cast<std::string*>( userdata );
+  str->append( ptr, size * nmemb );
+  return size * nmemb;
+}
+
+int client_write_cb( void* ptr, size_t len, void* ctx ) {
   auto buffer = static_cast<std::string*>( ctx );
   buffer->append( static_cast<char*>( ptr ), len );
   return recv_status::finish;
+}
+
+void calling_tool( std::string_view str ) {
+  std::cout << TOOL << "[tool-call] " << str << RESET << "\n";
 }
 
 

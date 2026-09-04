@@ -1,5 +1,4 @@
 #include "database.h"
-#include "tool_manager.h"
 #include "json.h"
 #include <simdjson.h>
 extern "C" {
@@ -8,13 +7,14 @@ extern "C" {
 
 #if !defined( _ANI_CONVERSE_H )
 
+struct tool_data {
+  yyjson_doc* doc;
+  yyjson_val* root;
+  tool_data( yyjson_doc* _doc, yyjson_val* _root ) 
+    : doc( _doc ), root( _root ) { };
+};
+
 class memory {
-public:
-  struct tool_data {
-    yyjson_doc* doc;
-    yyjson_val* root;
-    tool_data( yyjson_doc* _doc, yyjson_val* _root ) : doc( _doc ), root( _root ) { };
-  };
 public:
   void init( );
   std::string_view create_tool_call( std::string_view name, std::string_view func_desc, std::string_view param_desc );
@@ -27,9 +27,11 @@ public:
   void encode_image( std::string_view data, std::string& out );
   void store( std::string_view role, std::string_view mtype, std::string_view content );
   void store( std::string_view role, std::string_view mtype, std::string_view content, std::string_view images );
-  void store_tool_result( std::string_view tool_name, std::string_view data );
-  void store_tool_result_str( std::string_view tool_name, std::string_view tool_id, std::string_view data );
+  // void store_tool_result( std::string_view tool_name, std::string_view data );
+  void store_tool_result( std::string_view tool_name, std::string_view tool_id, std::string_view data );
   void store_image( const std::vector<std::string_view>& path );
+  void add_tools( tool_data* tools, size_t n_tools );
+  void clear_tools( );
 public:
   memory( );
   ~memory( );
@@ -37,8 +39,7 @@ private:
   database db;
   statement store_stmt;
   statement ret_stmt;
-  tool_manager tools_manager;
-  std::vector<tool_json>* tools_data;
+  std::vector<tool_data> tools_info;
   char* json_str;
   size_t len;
   std::string img_buffer;

@@ -104,7 +104,7 @@ void memory::load_tools_data( yyjson_mut_doc* doc, yyjson_mut_val* root ) {
   yyjson_mut_val* tools = yyjson_mut_arr( doc );
   yyjson_mut_obj_add_val( doc, root, "tools", tools );
   yyjson_mut_val* tool;
-  for ( auto& i : *tools_data ) {
+  for ( auto& i : tools_info ) {
     tool = yyjson_val_mut_copy( doc, i.root );
     yyjson_mut_arr_add_val( tools, tool );
   }
@@ -120,31 +120,31 @@ void memory::encode_image( std::string_view data, std::string& out ) {
 }
 
 
-void memory::store_tool_result( std::string_view tool_name, std::string_view data ) {
+// void memory::store_tool_result( std::string_view tool_name, std::string_view data ) {
+//   yyjson_mut_doc* doc = yyjson_mut_doc_new( nullptr );
+//   yyjson_mut_val* root = yyjson_mut_obj( doc );
+//   yyjson_mut_doc_set_root( doc, root );
+//   yyjson_mut_obj_add_strn( doc, root, "tool_name", tool_name.data( ), tool_name.size( ) );
+//   yyjson_doc* web_doc = yyjson_read( data.data( ), data.size( ), 0 );
+//   yyjson_val* web_root = yyjson_doc_get_root( web_doc );
+//   yyjson_mut_val* ret = yyjson_val_mut_copy( doc, web_root );
+//   yyjson_mut_obj_add_val( doc, root, "content", ret );
+//   size_t len;
+//   char* j = yyjson_mut_write( doc, 0, &len );
+//   this->store( "tool", "tool_result", std::string_view( j, len ) );
+//   free( j );
+//   // free( this->_json_str );
+//   yyjson_doc_free( web_doc );
+//   yyjson_mut_doc_free( doc );
+// }
+
+void memory::store_tool_result( std::string_view tool_name, std::string_view tool_id, std::string_view data ) {
   yyjson_mut_doc* doc = yyjson_mut_doc_new( nullptr );
   yyjson_mut_val* root = yyjson_mut_obj( doc );
   yyjson_mut_doc_set_root( doc, root );
   yyjson_mut_obj_add_strn( doc, root, "tool_name", tool_name.data( ), tool_name.size( ) );
-  yyjson_doc* web_doc = yyjson_read( data.data( ), data.size( ), 0 );
-  yyjson_val* web_root = yyjson_doc_get_root( web_doc );
-  yyjson_mut_val* ret = yyjson_val_mut_copy( doc, web_root );
-  yyjson_mut_obj_add_val( doc, root, "content", ret );
-  size_t len;
-  char* j = yyjson_mut_write( doc, 0, &len );
-  this->store( "tool", "tool_result", std::string_view( j, len ) );
-  free( j );
-  // free( this->_json_str );
-  yyjson_doc_free( web_doc );
-  yyjson_mut_doc_free( doc );
-}
-
-void memory::store_tool_result_str( std::string_view tool_name, std::string_view tool_id, std::string_view data ) {
-  yyjson_mut_doc* doc = yyjson_mut_doc_new( nullptr );
-  yyjson_mut_val* root = yyjson_mut_obj( doc );
-  yyjson_mut_doc_set_root( doc, root );
-  yyjson_mut_obj_add_strncpy( doc, root, "tool_name", tool_name.data( ), tool_name.size( ) );
-  yyjson_mut_obj_add_strncpy( doc, root, "tool_call_id", tool_id.data( ), tool_id.size( ) );
-  yyjson_mut_obj_add_strncpy( doc, root, "content", data.data( ), data.size( ) );
+  yyjson_mut_obj_add_strn( doc, root, "tool_call_id", tool_id.data( ), tool_id.size( ) );
+  yyjson_mut_obj_add_strn( doc, root, "content", data.data( ), data.size( ) );
   size_t len;
   char* j = yyjson_mut_write( doc, 0, &len );
   this->store( "tool", "tool_result", std::string_view( j, len ) );
@@ -215,9 +215,16 @@ void memory::store( std::string_view role, std::string_view mtype, std::string_v
   this->db.bind_params( &this->store_stmt );
   this->db.execute( &this->store_stmt ); 
 }
-// void memory::put_image_in( yyjson_mut_doc* doc, yyjson_mut_val* root, const std::string& file ) {
 
-// }
+void memory::clear_tools( ) {
+  tools_info.clear( );
+}
+
+void memory::add_tools( tool_data* tools, size_t n_tools ) {
+  for ( size_t i = 0; i < n_tools; i++ ) {
+    this->tools_info.emplace_back( tools[i].doc, tools[i].root ); 
+  }
+}
 
 void memory::init( ) {
   db.initialize( );
@@ -236,9 +243,6 @@ void memory::init( ) {
   this->message_type.resize( 20 );
   this->content.resize( 5 * 1024 * 1024 );
   this->images.resize( 64 * 1024 );
-
-  this->tools_manager.load_tools( "tools/" );
-  this->tools_data = this->tools_manager.get_tools( );
 }
 
 memory::memory( ) {

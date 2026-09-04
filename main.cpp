@@ -9,6 +9,10 @@ int main( ) {
   while ( true ) {
     std::cout << "msg>>> ";
     while ( std::getline( std::cin, line ) ) {
+      if ( line == "exit" || line == "quit" ) {
+        std::cout << "exiting....\n";
+        return 0;
+      }
       if ( line == "/end" ) break;
       if ( line.starts_with("img>>> ")) {
         images.emplace_back( line.substr( 7 ) );

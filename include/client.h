@@ -23,17 +23,18 @@ size_t stoul( const char* str, size_t len );
 class client {
 public:
   void init( );
-  void connect( const std::string& ip, uint32_t port );
+  error_t connect( const std::string& ip, uint32_t port );
   void persist_connect( );
-  void send( std::string_view data );
-  void send( const void* data, size_t len );
-  void recv( );
+  error_t send( std::string_view data );
+  error_t send( const void* data, size_t len );
+  error_t recv( );
   void set_receive_cb( client_callback_t cb );
   void set_receive_cb_ctx( void* ctx );
 public:
   client( );
   static void error( std::string_view str );
   static void error( std::string_view str, int err );
+  void error_string( );
   ~client( );
 public:
   socket_t fd;
@@ -41,6 +42,7 @@ public:
   ssize_t s_bytes;
   ssize_t r_bytes;
   std::string buffer;
+  std::string error_str;
   int err;
   epoll_event ev;
   epoll_event ret_ev;
