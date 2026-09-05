@@ -133,6 +133,7 @@ void memory::store_tool_result( std::string_view tool_name, std::string_view too
   yyjson_mut_doc_free( doc );
 }
 
+// maybe not needed
 void memory::store_image( const std::vector<std::string_view>& path ) {
 
 }
@@ -142,6 +143,7 @@ std::string_view memory::load_conversation_beta( ) {
   return std::string_view( nullptr, 0 );
 }
 
+// ass code, will improve later **** HOPEFULLY ********
 std::string_view memory::create_tool_call( std::string_view name, std::string_view func_desc, std::string_view param_desc ) {
   json root;
   root.init_json( nullptr );

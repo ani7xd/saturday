@@ -634,7 +634,7 @@ void tool_manager::init( ) {
   web_client.req.set_url( "https://api.tavily.com/search" );
   web_client.req.set_http_method_post( );
   web_client.req.set_custom_option_list( "Content-Type", "application/json" );
-  std::string key = "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";
+  std::string key = std::getenv( "TAVILY_API_KEY" );
   web_client.req.set_custom_option_list( "Authorization", "Bearer " + key );
   web_client.req.set_body_write_cb( web_write_cb );
   web_client.req.set_body_cb_data( &web_client.buffer );
