@@ -47,7 +47,7 @@ void model::handle_ctx( context* ctx ) {
 }
 
 void model::init_async_reply( ) {
-  std::jthread worker{[&](std::stop_token token){
+  worker = std::jthread{ [&](std::stop_token token){
     while ( !token.stop_requested( ) ) {
       model_context.stream.consume( );
     }

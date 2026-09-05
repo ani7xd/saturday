@@ -67,6 +67,7 @@ private:
   context model_context;
   memory conversation;
   sound speaker;
+  std::jthread worker;
 };
 
 #define _ANI_MODEL_H

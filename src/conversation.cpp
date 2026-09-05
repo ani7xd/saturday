@@ -211,7 +211,11 @@ void memory::add_tools( tool_data* tools, size_t n_tools ) {
 
 void memory::init( ) {
   db.initialize( );
-  db.connect( "localhost", "agent", "agent123", "agent" );
+  std::string_view username = std::getenv( "DATABASE_USERNAME" );
+  std::string_view password = std::getenv( "DATABASE_PASSWORD" );
+  std::string_view path = std::getenv( "DATABASE_PATH" );
+  std::string_view host = std::getenv( "DATABASE_HOST" );
+  db.connect( host, username, password, path );
   std::string store_sql, ret_sql;
   db.load_stmt_file( "sql/store.sql", store_sql );
   db.load_stmt_file( "sql/retrieve.sql", ret_sql );
