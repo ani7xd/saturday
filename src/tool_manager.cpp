@@ -32,25 +32,6 @@ void tool_manager::send_data_tcp( std::string_view data, std::string& ret ) {
   }
 }
 
-// void tool_manager::tool_open_browser_window_url( std::string url ) {
-//   int pid = fork( );
-//   int in[2], out[2];
-//   if ( pid == 0 ) {
-//     char* argv[] = {
-//       "waterfox",
-//       "--new-tab",
-//       url.data( ),
-//       nullptr
-//     };
-//     execvp( "waterfox", argv );
-//     perror( "execvp" );
-//     exit( -1 );
-//   }
-//   else {
-//     return;
-//   }
-// }
-
 void tool_manager::call_tool( tool_context* context, tool_result* ret ) {
   parse_arguements( context );
   tool_map[context->tool_name](context);
@@ -192,7 +173,6 @@ void tool_manager::edit_file( const std::filesystem::path& file, std::string_vie
   }
   std::ifstream f{ file };
   if ( f.is_open( ) ) {
-    // std::cout << "file opened for editing...\n";
     std::string contents{ std::istreambuf_iterator<char>( f ), std::istreambuf_iterator<char>( ) };
     f.close( );
     size_t count = 0;
@@ -321,7 +301,7 @@ void tool_manager::list_directories( const std::filesystem::path& path, tool_res
 void tool_manager::read_file( const std::string& path, std::string& contents ) {
   if ( !std::filesystem::exists( path ) ) {
     contents = "error: file doesn't exist";
-    // store_tool_result_str( "read_file", chat_context.tool_id, "error: file doesn't exist" );
+    return;
   }
   else {
     std::ifstream file{ path };
@@ -331,12 +311,12 @@ void tool_manager::read_file( const std::string& path, std::string& contents ) {
       file.seekg( 0, std::ios::beg );
       contents.resize( len );
       file.read( contents.data( ), contents.size( ) );
-      // store_tool_result_str( "read_file", chat_context.tool_id, contents );
       file.close( );
+      return;
     }
     else {
       contents = "error: couldn't open file";
-      // store_tool_result_str( "read_file", chat_context.tool_id, "error: couldn't open file" );
+      return;
     }
   }
 }
@@ -405,7 +385,6 @@ void tool_manager::write_file( const std::string& path, const std::string_view c
     }
   }
 }
-
 
 void tool_manager::fetch_url( client_worker* client, std::string_view url, fetched_resource* ret ) {
   client->req.set_url( url );

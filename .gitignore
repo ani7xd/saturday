@@ -11,4 +11,5 @@ files/
 .vscode/
 project/
 main2.cpp
-
+clear
+clear_db.cpp

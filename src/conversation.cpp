@@ -119,25 +119,6 @@ void memory::encode_image( std::string_view data, std::string& out ) {
   out.resize( len );
 }
 
-
-// void memory::store_tool_result( std::string_view tool_name, std::string_view data ) {
-//   yyjson_mut_doc* doc = yyjson_mut_doc_new( nullptr );
-//   yyjson_mut_val* root = yyjson_mut_obj( doc );
-//   yyjson_mut_doc_set_root( doc, root );
-//   yyjson_mut_obj_add_strn( doc, root, "tool_name", tool_name.data( ), tool_name.size( ) );
-//   yyjson_doc* web_doc = yyjson_read( data.data( ), data.size( ), 0 );
-//   yyjson_val* web_root = yyjson_doc_get_root( web_doc );
-//   yyjson_mut_val* ret = yyjson_val_mut_copy( doc, web_root );
-//   yyjson_mut_obj_add_val( doc, root, "content", ret );
-//   size_t len;
-//   char* j = yyjson_mut_write( doc, 0, &len );
-//   this->store( "tool", "tool_result", std::string_view( j, len ) );
-//   free( j );
-//   // free( this->_json_str );
-//   yyjson_doc_free( web_doc );
-//   yyjson_mut_doc_free( doc );
-// }
-
 void memory::store_tool_result( std::string_view tool_name, std::string_view tool_id, std::string_view data ) {
   yyjson_mut_doc* doc = yyjson_mut_doc_new( nullptr );
   yyjson_mut_val* root = yyjson_mut_obj( doc );
