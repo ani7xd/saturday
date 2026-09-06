@@ -1,0 +1,1 @@
+SELECT content from system_prompt;

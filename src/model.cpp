@@ -47,8 +47,8 @@ void model::handle_ctx( context* ctx ) {
 }
 
 void model::init_async_reply( ) {
-  worker = std::jthread{ [&](std::stop_token token){
-    while ( !token.stop_requested( ) ) {
+  worker = std::jthread{ [&]( ){
+    while ( true/*!token.stop_requested( )*/ ) {
       model_context.stream.consume( );
     }
   }};
@@ -63,8 +63,9 @@ void model::tool_call( tool_context* tool_ctx ) {
   tool_ctx->tool_call = false;
 }
 
-void model::set_system_prompt( std::string_view system ) {
-  conversation.store( "system", "text", system );
+void model::set_system_prompt( std::string_view prompt ) {
+  conversation.store( "system", "text", prompt );
+  // conversation.store_system_prompt( prompt );
 }
 
 void make_prompt( std::string& root, std::string_view value, std::string& ret ) {
@@ -95,22 +96,37 @@ void model::initialize( ) {
   auto tools_info = tools.get_tools( );
   conversation.init( );
   conversation.add_tools( reinterpret_cast<tool_data*>( tools_info->data( ) ), tools_info->size( ) );
-  if ( !std::filesystem::exists( "p" ) ) {
-    std::string prompt;
-    std::ifstream file{ "gf_prompt" };
-    if ( file.is_open( ) ) {
-      file.seekg( 0, std::ios::end );
-      size_t ptr = file.tellg( );
-      file.seekg( 0, std::ios::beg );
-      prompt.resize( ptr );
-      file.read( prompt.data( ), prompt.size( ) );
-      set_system_prompt( prompt );
-      std::ofstream f{ "p" };
-      if ( f.is_open( ) ) f.close( );
-      file.close( );
-    }
-  }
   init_async_reply( );
+  std::string prompt;
+  char* path = std::getenv( "SYSTEM_PROMPT_PATH" );
+  if ( path == nullptr ) return;
+  std::ifstream file{ path };
+  if ( file.is_open( ) ) {
+    file.seekg( 0, std::ios::end );
+    size_t ptr = file.tellg( );
+    file.seekg( 0, std::ios::beg );
+    prompt.resize( ptr );
+    file.read( prompt.data( ), prompt.size( ) );
+    set_system_prompt( prompt );
+    std::ofstream f{ "p" };
+    if ( f.is_open( ) ) f.close( );
+    file.close( );
+  }
+  // if ( !std::filesystem::exists( "p" ) ) {
+  //   std::string prompt;
+  //   std::ifstream file{ "gf_prompt" };
+  //   if ( file.is_open( ) ) {
+  //     file.seekg( 0, std::ios::end );
+  //     size_t ptr = file.tellg( );
+  //     file.seekg( 0, std::ios::beg );
+  //     prompt.resize( ptr );
+  //     file.read( prompt.data( ), prompt.size( ) );
+  //     set_system_prompt( prompt );
+  //     std::ofstream f{ "p" };
+  //     if ( f.is_open( ) ) f.close( );
+  //     file.close( );
+  //   }
+  // }
 }
 
 size_t write_callback( char* ptr, size_t size, size_t nmemb, void* userdata ) {

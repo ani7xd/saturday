@@ -22,20 +22,37 @@ void database::connect( std::string_view host, std::string_view user, std::strin
 }
 
 void database::bind_params( statement* stmt ) {
-  mysql_stmt_bind_param( stmt->stmt, stmt->param.buffer.data( ) );
+  error_code = mysql_stmt_bind_param( stmt->stmt, stmt->param.buffer.data( ) );
 }
 
 void database::bind_result( statement* stmt ) {
-  mysql_stmt_bind_result( stmt->stmt, stmt->result.buffer.data( ) );
+  error_code = mysql_stmt_bind_result( stmt->stmt, stmt->result.buffer.data( ) );
 }
 
-void database::execute( statement* stmt ) {
-  if ( mysql_stmt_execute( stmt->stmt ) != 0 )
-    std::cout << "failed execute: " << mysql_stmt_error( stmt->stmt ) << '\n';
+void database::bind_params( statement& stmt ) {
+  error_code = mysql_stmt_bind_param( stmt.stmt, stmt.param.buffer.data( ) );
+}
+
+void database::bind_result( statement& stmt ) {
+  error_code = mysql_stmt_bind_result( stmt.stmt, stmt.result.buffer.data( ) );
+}
+
+int database::execute( statement* stmt ) {
+  error_code = mysql_stmt_execute( stmt->stmt );
+  return error_code;
+}
+
+int database::execute( const statement& stmt ) {
+  error_code = mysql_stmt_execute( stmt.stmt );
+  return error_code;
 }
 
 int database::fetch( statement* stmt ) {
   return mysql_stmt_fetch( stmt->stmt );
+}
+
+int database::fetch( const statement& stmt ) {
+  return mysql_stmt_fetch( stmt.stmt );
 }
 
 void database::commit( ) {
@@ -44,6 +61,10 @@ void database::commit( ) {
 
 uint64_t database::get_last_insert_id( ) {
   return mysql_insert_id( this->conn );
+}
+
+uint64_t database::get_affected_rows( ) {
+  return mysql_affected_rows( this->conn );
 }
 
 void database::set_autocommit( bool value ) {
@@ -68,7 +89,7 @@ void database::initialize( ) {
     std::cout << "failed to init database\n";
 }
 
-database::database( ) {
+database::database( ) : conn( nullptr ) {
 
 }
 
@@ -115,4 +136,22 @@ std::string_view series::cover_name( ) {
   return cover_url.subview( cover_url.find_last_of( '/' ) + 1 );
 }
 
+void statement::bind_params( ) {
+  mysql_stmt_bind_param( this->stmt, this->param.buffer.data( ) );
+}
 
+void statement::bind_result( ) {
+  mysql_stmt_bind_result( this->stmt, this->result.buffer.data( ) );
+}
+
+bool statement::free_result( ) {
+  return mysql_stmt_free_result( stmt );
+}
+
+statement::statement( ) : error_code( 0 ), stmt( nullptr ) {
+
+}
+
+statement::~statement( ) {
+
+}

@@ -5,7 +5,7 @@ std::string_view memory::load_conversation( ) {
   ret_stmt.result.bind( 1, message_type );
   ret_stmt.result.bind( 2, content );
   ret_stmt.result.bind( 3, images );
-  db.bind_result( &this->ret_stmt );
+  ret_stmt.bind_result( );
   yyjson_mut_doc* doc = yyjson_mut_doc_new( nullptr );
   yyjson_mut_val* root = yyjson_mut_obj( doc );
   yyjson_mut_doc_set_root( doc, root );
@@ -15,9 +15,10 @@ std::string_view memory::load_conversation( ) {
 
   yyjson_mut_val* msgs = yyjson_mut_arr( doc );
   yyjson_mut_obj_add_val( doc, root, "messages", msgs );
-  db.execute( &this->ret_stmt );
+  this->load_system_prompt( doc, msgs );
+  db.execute( this->ret_stmt );
   int ret = 0;
-  while ( ( ret = this->db.fetch( &this->ret_stmt ) ) == 0 )
+  while ( ( ret = this->db.fetch( this->ret_stmt ) ) == 0 )
   {
     yyjson_mut_val* msg = yyjson_mut_obj( doc );
     yyjson_mut_obj_add_strncpy( doc, msg, "role", role.data( ), this->ret_stmt.result.lengths[0] );
@@ -43,6 +44,19 @@ void memory::set_brainwash_data( yyjson_mut_doc* doc, yyjson_mut_val* root ) {
   yyjson_mut_obj_add_int( doc, options, "num_predict", -1 );
   yyjson_mut_obj_add_int( doc, options, "num_ctx", 32768 ); 
   this->load_tools_data( doc, root );
+}
+
+void memory::load_system_prompt( yyjson_mut_doc* doc, yyjson_mut_val* msgs ) {
+  system_prompt_retrieve_stmt.result.bind( 0, system_prompt );
+  system_prompt_retrieve_stmt.bind_result( );
+  db.execute( system_prompt_retrieve_stmt );
+  if ( db.fetch( system_prompt_retrieve_stmt ) == 0 ) {
+    yyjson_mut_val* sys_prompt = yyjson_mut_obj( doc );
+    yyjson_mut_obj_add_strcpy( doc, sys_prompt, "role", "system" );
+    yyjson_mut_obj_add_strncpy( doc, sys_prompt, "content", system_prompt.data( ), system_prompt_retrieve_stmt.result.lengths[0] );
+    yyjson_mut_arr_add_val( msgs, sys_prompt );
+  }
+  system_prompt_retrieve_stmt.free_result( );
 }
 
 bool memory::load_tool_calls( yyjson_mut_doc* doc, yyjson_mut_val* msg, statement* stmt ) {
@@ -185,8 +199,8 @@ void memory::store( std::string_view role, std::string_view mtype, std::string_v
   this->store_stmt.param.bind( 1, mtype );
   this->store_stmt.param.bind( 2, content );
   this->store_stmt.param.bind( 3, images );
-  this->db.bind_params( &this->store_stmt );
-  this->db.execute( &this->store_stmt ); 
+  this->store_stmt.bind_params( );
+  this->db.execute( this->store_stmt ); 
 }
 
 void memory::store( std::string_view role, std::string_view mtype, std::string_view content ) {
@@ -195,8 +209,14 @@ void memory::store( std::string_view role, std::string_view mtype, std::string_v
   this->store_stmt.param.bind( 2, content );
   std::string_view image = "[]";
   this->store_stmt.param.bind( 3, image );
-  this->db.bind_params( &this->store_stmt );
-  this->db.execute( &this->store_stmt ); 
+  this->store_stmt.bind_params( );
+  this->db.execute( this->store_stmt ); 
+}
+
+void memory::store_system_prompt( std::string_view prompt ) {
+  this->system_prompt_store_stmt.param.bind( 0, prompt );
+  this->system_prompt_store_stmt.bind_params( );
+  this->db.execute( system_prompt_store_stmt );
 }
 
 void memory::clear_tools( ) {
@@ -217,19 +237,27 @@ void memory::init( ) {
   std::string_view host = std::getenv( "DATABASE_HOST" );
   db.connect( host, username, password, path );
   std::string store_sql, ret_sql;
+  std::string system_retrieve_sql, system_store_sql;
   db.load_stmt_file( "sql/store.sql", store_sql );
   db.load_stmt_file( "sql/retrieve.sql", ret_sql );
+  db.load_stmt_file( "sql/system_prompt_store.sql", system_store_sql );
+  db.load_stmt_file( "sql/system_prompt_retrieve.sql", system_retrieve_sql );
   db.prepare_statement( &this->store_stmt, store_sql );
   db.prepare_statement( &this->ret_stmt, ret_sql );
+  db.prepare_statement( &system_prompt_store_stmt, system_store_sql );
+  db.prepare_statement( &system_prompt_retrieve_stmt, system_retrieve_sql );
   db.set_autocommit( true );
   this->store_stmt.param.init<std::string, std::string, std::string, std::string>( );
   this->ret_stmt.result.init<std::string, std::string, std::string, std::string>( );
+  this->system_prompt_store_stmt.param.init<std::string>( );
+  this->system_prompt_retrieve_stmt.result.init<std::string>( );
   this->json_str = nullptr;
 
   this->role.resize( 10 );
   this->message_type.resize( 20 );
   this->content.resize( 5 * 1024 * 1024 );
   this->images.resize( 64 * 1024 );
+  this->system_prompt.resize( 1024 * 1024 );
 }
 
 memory::memory( ) {

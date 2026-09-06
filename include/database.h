@@ -12,6 +12,8 @@
 
 typedef float float_t;
 
+// also need to remove this, dont know how the scrapper
+// struct got in here
 struct series {
   std::string title;
   std::string alternate_titles;
@@ -32,6 +34,7 @@ struct series {
   std::string_view cover_name( );
 };
 
+// have to make this bro into a class next
 struct statement {
   MYSQL_STMT* stmt;
   struct param_group {
@@ -52,6 +55,12 @@ struct statement {
     template<typename T> void init_impl( size_t index );
     template<typename T> void bind( size_t index, T& value );
   } result;
+  int error_code;
+  void bind_params( );
+  void bind_result( );
+  bool free_result( );
+  statement( );
+  ~statement( );
 };
 
 class database {
@@ -59,21 +68,29 @@ public:
   void initialize( );
   void connect( std::string_view host, std::string_view user, std::string_view password, std::string_view database );
   statement* prepare_statement( statement* stmt, std::string_view statement );
-  void execute( statement* stmt );
+  int execute( statement* stmt );
+  int execute( const statement& stmt );
   int fetch( statement* stmt );
+  int fetch( const statement& stmt );
   void commit( );
   void load_stmt_file( const std::string& file, std::string& out );
   void free_stmt( statement* stmt );
   uint64_t get_last_insert_id( );
+  uint64_t get_affected_rows( );
   void set_autocommit( bool value );
 public:
+  // might remove this, after i make statement a class
   void bind_params( statement* stmt );
   void bind_result( statement* stmt );
+  void bind_params( statement& stmt );
+  void bind_result( statement& stmt );
 public:
   database( );
   ~database( );
 public:
   MYSQL* conn;
+  int error_code;
+  std::vector<statement*> stmts;
 };
 
 template<typename T>
