@@ -28,6 +28,7 @@ void model::send_prompt( std::string_view prompt, const std::vector<std::string>
     yyjson_mut_doc_free( doc );
   }
   std::string_view data = conversation.load_conversation( );
+  std::cout << "check data->\n" << data << "\n";
   req.set_post_data( data );
   req.request( );
   handle_ctx( &model_context );
@@ -64,8 +65,8 @@ void model::tool_call( tool_context* tool_ctx ) {
 }
 
 void model::set_system_prompt( std::string_view prompt ) {
-  conversation.store( "system", "text", prompt );
-  // conversation.store_system_prompt( prompt );
+  // conversation.store( "system", "text", prompt );
+  conversation.store_system_prompt( prompt );
 }
 
 void make_prompt( std::string& root, std::string_view value, std::string& ret ) {
@@ -108,8 +109,6 @@ void model::initialize( ) {
     prompt.resize( ptr );
     file.read( prompt.data( ), prompt.size( ) );
     set_system_prompt( prompt );
-    std::ofstream f{ "p" };
-    if ( f.is_open( ) ) f.close( );
     file.close( );
   }
   // if ( !std::filesystem::exists( "p" ) ) {
