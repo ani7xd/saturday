@@ -1,35 +1,19 @@
-#include <sys/wait.h>
-#include <sys/epoll.h>
-#include <sys/eventfd.h>
-#include <string.h>
+#pragma once
 #include <queue>
 #include <mutex>
-#include <iostream>
+#include <condition_variable>
 #include <string>
 #include <string_view>
-
-#if !defined(_ANI_CLIENT_H)
-  typedef int epoll_t;
-#endif
-
-
-#if !defined (_ANI_TEXT_STREAM_H)
+#include <iostream>
 
 class context_stream {
 public:
-  void consume( ); 
-  void push( std::string_view );
-public:
-  context_stream( );
-  ~context_stream( );
-public:
+  void push(std::string_view data);
+  bool consume();
+  void close();
+private:
   std::queue<std::string> stream;
-  epoll_t epoll;
-  epoll_event ev;
-  epoll_event r_evs[5];
   std::mutex mtx;
-  int event_fd;
+  std::condition_variable ready;
+  bool closed = false;
 };
-
-#define _ANI_TEXT_STREAM_H
-#endif

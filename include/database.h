@@ -4,9 +4,11 @@
 #include <cstring>
 #include <string_view>
 #include <vector>
-#include <mariadb/conncpp.hpp>
+#include <type_traits>
+#include <deque>
+#include <stdexcept>
 #include <cassert>
-#include <mysql/mysql.h>
+#include <mysql.h>
 
 #if !defined( _ANI_DATABASE_H )
 
@@ -42,15 +44,16 @@ struct statement {
     template<typename T> void init_impl( size_t index );
     template<typename T> void bind( size_t index, T&& value );
     std::vector<MYSQL_BIND> buffer;
-    std::vector<uint64_t> lengths;
+    std::vector<unsigned long> lengths;
     friend class database;
     private:
     uint64_t count;
   } param;
   struct result_group {
     std::vector<MYSQL_BIND> buffer;
-    std::vector<uint64_t> lengths;
-    std::vector<my_bool> is_null;
+    std::vector<unsigned long> lengths;
+    using null_flag = std::remove_pointer_t<decltype(MYSQL_BIND{}.is_null)>;
+    std::deque<null_flag> is_null;
     template<typename... Ts> void init( );
     template<typename T> void init_impl( size_t index );
     template<typename T> void bind( size_t index, T& value );
@@ -60,6 +63,8 @@ struct statement {
   void bind_result( );
   bool free_result( );
   statement( );
+  statement(const statement&) = delete;
+  statement& operator=(const statement&) = delete;
   ~statement( );
 };
 

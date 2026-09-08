@@ -29,11 +29,11 @@ public:
   inference( );
   ~inference( );
 public:
-  llama_model* model;
-  llama_context * ctx;
+  llama_model* model = nullptr;
+  llama_context * ctx = nullptr;
   const llama_vocab * vocab;
   llama_sampler_chain_params sampler_params;
-  llama_sampler * sampler;
+  llama_sampler * sampler = nullptr;
   llama_model_params model_params;
   const char* tmpl;
   std::vector<llama_chat_message> chat;

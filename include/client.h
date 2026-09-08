@@ -1,14 +1,25 @@
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+using socket_t = SOCKET;
+using error_t = int;
+#else
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <unistd.h>
+#include <sys/epoll.h>
+using socket_t = int;
+#endif
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <string_view>
-#include <sys/epoll.h>
 #include <string.h>
 
 #if !defined( _ANI_CLIENT_H )
 
-typedef int socket_t;
+
 typedef int epoll_t;
 
 enum recv_status {
@@ -38,14 +49,20 @@ public:
   ~client( );
 public:
   socket_t fd;
+  #ifndef _WIN32
   epoll_t epoll;
-  ssize_t s_bytes;
+  #endif
+  std::ptrdiff_t s_bytes;
   ssize_t r_bytes;
   std::string buffer;
   std::string error_str;
   int err;
+  #ifndef _WIN32
   epoll_event ev;
   epoll_event ret_ev;
+  #else
+  bool winsock_started = false;
+  #endif
   client_callback_t receive_cb;
   void* receive_cb_ctx;
 };

@@ -1,3 +1,4 @@
+#ifndef _WIN32
 #include "../include/client.h"
 
 error_t client::recv( ) {
@@ -136,7 +137,7 @@ void client::init( ) {
 size_t stoul( const char* str, size_t len ) {
   size_t value = 0;
   for ( size_t i = 0; i < len; i++ ) 
-    value += value * 10 + static_cast<unsigned>( str[i] - '0' );
+    value = value * 10 + static_cast<unsigned>( str[i] - '0' );
   return value;
 }
 
@@ -158,3 +159,4 @@ client::client( ) : err( 0 ) {
 client::~client( ) {
 
 }
+#endif

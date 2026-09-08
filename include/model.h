@@ -1,6 +1,6 @@
 #include "tool_manager.h"
 #include <thread>
-#include <llama.h>
+
 #include "sound.h"
 #include "text_stream.h"
 
@@ -13,14 +13,18 @@ void make_prompt( std::string& root, std::string_view value, std::string& ret );
 
 constexpr std::string_view THINKING = "\033[2;37m";
 
+struct pending_tool { std::string name, id, arguments; };
+
 struct context {
+  std::deque<pending_tool> pending;
+  std::string stream_error;
   simdjson::ondemand::parser parser;
   simdjson::padded_string j_str;
-  simdjson::fallback::ondemand::document_stream::iterator::value_type json;
-  simdjson::simdjson_result<simdjson::fallback::ondemand::value> think;
+  simdjson::ondemand::document json;
+  simdjson::simdjson_result<simdjson::ondemand::value> think;
   memory* conversation;
-  bool is_thinking;
-  bool is_responding;
+  bool is_thinking = false;
+  bool is_responding = false;
   std::string buffer;
   std::string response;
   tool_context tool;
@@ -50,9 +54,11 @@ public:
   };
 public:
   void initialize( );
+  void set_mode(std::string value) { mode = std::move(value); }
   void send_prompt( std::string_view prompt, const std::vector<std::string>& path );
   void set_system_prompt( std::string_view system );
   void handle_ctx( context* ctx );
+  void request_response();
   void tool_call( tool_context* tool_ctx );
   void speak_my_lil_nigga( const std::string& str );
   void handle_stream_async( );
@@ -62,6 +68,7 @@ public:
   friend size_t write_callback( char* ptr, size_t size, size_t nmemb, void* userdata );
   ~model( );
 private:
+  std::string mode = "auto";
   http req;
   tool_manager tools;
   context model_context;
