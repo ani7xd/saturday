@@ -7,8 +7,12 @@ void tool_manager::get_local_time( std::string& data ) {
   data = std::format( "{:%F %T %Z}", zt );
 }
 
-void tool_manager::get_global_time( std::string region ) {
-
+void tool_manager::get_global_time( const std::string& region, std::string& data ) {
+  auto zone = std::chrono::locate_zone( region );
+  auto now = std::chrono::system_clock::now( );
+  auto zt = std::chrono::zoned_time( zone, now );
+  data = std::format( "{:%F %T %Z}", zt );
+  data = "error: could not get time for region '" + region;
 }
 
 void tool_manager::connect_to_tcp( const std::string& ip, short port, std::string& ret ) {
