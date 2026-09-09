@@ -28,7 +28,6 @@ void model::send_prompt( std::string_view prompt, const std::vector<std::string>
     yyjson_mut_doc_free( doc );
   }
   std::string_view data = conversation.load_conversation( );
-  std::cout << "check data->\n" << data << "\n";
   req.set_post_data( data );
   req.request( );
   handle_ctx( &model_context );
