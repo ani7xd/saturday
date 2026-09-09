@@ -110,7 +110,7 @@ public:
   void image_reverse_search( const std::filesystem::path& path );
   void image_reverse_search( void* data, size_t len );
   void get_local_time( std::string& data );
-  void get_global_time( const std::string& region. std::string& ret );
+  void get_global_time( const std::string& region, std::string& ret );
 
   // void tool_open_browser_window_url( std::string url );
   void connect_to_tcp( const std::string& ip, short port, std::string& ret );
