@@ -1,3 +1,4 @@
+#ifndef _WIN32
 #include "../include/microphone.h"
 
 Mic::Mic( ) : params( nullptr ), handle( nullptr ) {
@@ -113,3 +114,4 @@ void Mic::clear_voice( ) {
 void Mic::clear_cache( ) {
   this->temp_buffer.clear( );
 }
+#endif

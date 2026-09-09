@@ -1,13 +1,15 @@
 #include "../include/database.h"
+#include "../include/config.h"
 
 statement* database::prepare_statement( statement* stmt, std::string_view statement ) {
   auto stmt_p = mysql_stmt_init( this->conn );
   if ( !stmt_p ) {
-    std::cout << "mysql_stmt_init failed\n";
-    return nullptr;
+    throw std::runtime_error("mysql_stmt_init failed");
   }
   if ( mysql_stmt_prepare( stmt_p, statement.data( ), statement.size( ) ) ) {
-    std::cout << "prepare failed: " << mysql_stmt_error( stmt_p ) << '\n';
+    std::string error = mysql_stmt_error(stmt_p);
+    mysql_stmt_close(stmt_p);
+    throw std::runtime_error("MySQL prepare failed (run sql/schema.sql first): " + error);
   }
   unsigned long count = mysql_stmt_param_count( stmt_p );
   stmt->param.count = count;
@@ -16,9 +18,11 @@ statement* database::prepare_statement( statement* stmt, std::string_view statem
 }
 
 void database::connect( std::string_view host, std::string_view user, std::string_view password, std::string_view database ) {
-  if ( !mysql_real_connect( this->conn, host.data( ), user.data( ), password.data( ), database.data( ), 3306, nullptr, 0 ) ) {
-    std::cout << mysql_error( this->conn );
+  if ( !mysql_real_connect( this->conn, host.data( ), user.data( ), password.data( ), database.data( ), static_cast<unsigned>(std::stoul(utils::env("DATABASE_PORT", "3306"))), nullptr, 0 ) ) {
+    throw std::runtime_error(std::string("MySQL connection failed: ") + mysql_error(conn));
   }
+  if (mysql_set_character_set(conn, "utf8mb4"))
+    throw std::runtime_error(mysql_error(conn));
 }
 
 void database::bind_params( statement* stmt ) {
@@ -38,12 +42,14 @@ void database::bind_result( statement& stmt ) {
 }
 
 int database::execute( statement* stmt ) {
-  error_code = mysql_stmt_execute( stmt->stmt );
+  error_code = mysql_stmt_execute(stmt->stmt);
+  if (error_code) throw std::runtime_error(mysql_stmt_error(stmt->stmt));
   return error_code;
 }
 
 int database::execute( const statement& stmt ) {
-  error_code = mysql_stmt_execute( stmt.stmt );
+  error_code = mysql_stmt_execute(stmt.stmt);
+  if (error_code) throw std::runtime_error(mysql_stmt_error(stmt.stmt));
   return error_code;
 }
 
@@ -72,7 +78,7 @@ void database::set_autocommit( bool value ) {
 }
 
 void database::load_stmt_file( const std::string& file, std::string& out ) {
-  std::ifstream f{ file };
+  std::ifstream f{ file, std::ios::binary };
   if ( f.is_open( ) ) {
     f.seekg( 0, std::ios::end );
     size_t pos = f.tellg( );
@@ -86,7 +92,7 @@ void database::load_stmt_file( const std::string& file, std::string& out ) {
 void database::initialize( ) {
   conn = mysql_init( nullptr );
   if ( !conn )
-    std::cout << "failed to init database\n";
+    throw std::runtime_error("Failed to initialize MySQL client");
 }
 
 database::database( ) : conn( nullptr ) {
@@ -133,7 +139,7 @@ void series::display( ) {
 }
 
 std::string_view series::cover_name( ) {
-  return cover_url.subview( cover_url.find_last_of( '/' ) + 1 );
+  return std::string_view(cover_url).substr( cover_url.find_last_of( '/' ) + 1 );
 }
 
 void statement::bind_params( ) {
@@ -153,5 +159,6 @@ statement::statement( ) : error_code( 0 ), stmt( nullptr ) {
 }
 
 statement::~statement( ) {
+  if (stmt) mysql_stmt_close(stmt);
 
 }

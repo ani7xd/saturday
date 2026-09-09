@@ -1,17 +1,31 @@
 #include "../include/tool_manager.h"
+#include <ctime>
+#ifdef _WIN32
+#include <shellapi.h>
+#else
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
 
 
 void tool_manager::get_local_time( std::string& data ) {
-  auto now = std::chrono::system_clock::now( );
-  auto zt = std::chrono::zoned_time( std::chrono::current_zone( ), now );
-  data = std::format( "{:%F %T %Z}", zt );
+  auto now = std::time(nullptr);
+  std::tm local{};
+#ifdef _WIN32
+  localtime_s(&local, &now);
+#else
+  localtime_r(&now, &local);
+#endif
+  char text[128]{};
+  std::strftime(text, sizeof(text), "%Y-%m-%d %H:%M:%S %Z", &local);
+  data = text;
 }
 
 void tool_manager::get_global_time( std::string region ) {
 
 }
 
-void tool_manager::connect_to_tcp( const std::string& ip, short port, std::string& ret ) {
+void tool_manager::connect_to_tcp( const std::string& ip, uint16_t port, std::string& ret ) {
   if ( cl.connect( ip, port ) == 0 ) {
     ret = "log: connected successfully";
     return;
@@ -33,13 +47,20 @@ void tool_manager::send_data_tcp( std::string_view data, std::string& ret ) {
 }
 
 void tool_manager::call_tool( tool_context* context, tool_result* ret ) {
-  parse_arguements( context );
-  tool_map[context->tool_name](context);
+  auto handler = tool_map.find(context->tool_name);
+  if (handler == tool_map.end()) {
+    context->context->store_tool_result(context->tool_name, context->tool_id, "error: unknown tool");
+    return;
+  }
+  try { parse_arguements(context); handler->second(context); }
+  catch (const std::exception& error) {
+    context->context->store_tool_result(context->tool_name, context->tool_id, std::string("error: ") + error.what());
+  }
 }
 
 void tool_manager::parse_arguements( tool_context* context ) {
   context->json_str = simdjson::padded_string( context->tool_arguments_json );
-  context->json = parser.iterate( context->json_str );
+  context->json = context->parser.iterate(context->json_str).value();
 }
 
 void tool_manager::web_search( client_worker* web, std::string_view query ) {
@@ -153,6 +174,7 @@ std::string_view edit_result::form_json( ) {
   yyjson_mut_obj_add_uint( doc, root, "requested_count", this->requested_count );
   yyjson_mut_obj_add_uint( doc, root, "replaced_count", this->replaced_count );
   if ( !this->error.empty( ) ) yyjson_mut_obj_add_strn( doc, root, "error", this->error.data( ), this->error.size( ) );
+  free(this->json);
   this->json = yyjson_mut_write( doc, 0, &this->len );
   yyjson_mut_doc_free( doc );
   return std::string_view( this->json, this->len );
@@ -160,7 +182,7 @@ std::string_view edit_result::form_json( ) {
 
 void tool_manager::edit_file( const std::filesystem::path& file, std::string_view old_text, std::string_view new_text, edit_result* result, size_t r_count, size_t offset ) {
   result->success = false;
-  result->file = file;
+  result->file = utils::path_text(file);
   result->operation = "replace";
   result->occurrence_offset = offset;
   result->requested_count = r_count;
@@ -171,7 +193,7 @@ void tool_manager::edit_file( const std::filesystem::path& file, std::string_vie
     result->form_json( );
     return;
   }
-  std::ifstream f{ file };
+  std::ifstream f{ file, std::ios::binary };
   if ( f.is_open( ) ) {
     std::string contents{ std::istreambuf_iterator<char>( f ), std::istreambuf_iterator<char>( ) };
     f.close( );
@@ -205,7 +227,7 @@ void tool_manager::edit_file( const std::filesystem::path& file, std::string_vie
       }
     }
     
-    std::ofstream out{ file, std::ios::trunc };
+    std::ofstream out{ file, std::ios::trunc | std::ios::binary };
     if ( out.is_open( ) ) {
       out.write( contents.data( ), contents.size( ) );          // add counter to check for og r_count == count, so to tell llm upto how much count edited
       result->success = true;                                        // maybe also add line and column of where edits happened
@@ -227,11 +249,11 @@ void tool_manager::edit_file( const std::filesystem::path& file, std::string_vie
 }
 
 void tool_manager::list_directories( const std::filesystem::path& path, tool_result* ret ) {
-  auto& p = path.native( );
+  auto p = utils::path_text(path);
   yyjson_mut_doc* doc = yyjson_mut_doc_new( nullptr );
   yyjson_mut_val* root = yyjson_mut_obj( doc );
   yyjson_mut_doc_set_root( doc, root );
-  if ( !std::filesystem::exists( path ) ) {
+  if ( !std::filesystem::exists(path) ) {
     yyjson_mut_obj_add_bool( doc, root, "success", false );
     yyjson_mut_obj_add_strncpy( doc, root, "path", p.data( ), p.size( ) );
     yyjson_mut_obj_add_strcpy( doc, root, "error", "path doesn't exists" );
@@ -259,7 +281,7 @@ void tool_manager::list_directories( const std::filesystem::path& path, tool_res
     size_t entry_count = 0;
     for ( const auto& entry : dir ) {
       yyjson_mut_val* e = yyjson_mut_obj( doc );  
-      auto nat = entry.path( ).filename( ).native( );
+      auto nat = utils::path_text(entry.path().filename());
       yyjson_mut_obj_add_strncpy( doc, e, "name", nat.data( ), nat.size( ) );
       auto status = entry.symlink_status( err );
       if ( err ) {
@@ -298,92 +320,24 @@ void tool_manager::list_directories( const std::filesystem::path& path, tool_res
   yyjson_mut_doc_free( doc );
 }
 
-void tool_manager::read_file( const std::string& path, std::string& contents ) {
-  if ( !std::filesystem::exists( path ) ) {
-    contents = "error: file doesn't exist";
-    return;
-  }
-  else {
-    std::ifstream file{ path };
-    if ( file.is_open( ) ) {
-      file.seekg( 0, std::ios::end );
-      size_t len = file.tellg( );
-      file.seekg( 0, std::ios::beg );
-      contents.resize( len );
-      file.read( contents.data( ), contents.size( ) );
-      file.close( );
-      return;
-    }
-    else {
-      contents = "error: couldn't open file";
-      return;
-    }
-  }
+void tool_manager::read_file(const std::string& path, std::string& contents) {
+  std::ifstream file(utils::native_path(path), std::ios::binary);
+  if (!file) { contents = "error: cannot open file"; return; }
+  contents.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+  if (file.bad()) contents = "error: failed to read file";
 }
-  
-void tool_manager::write_file( const std::string& path, const std::string& contents ) {
-  auto f_path = std::filesystem::path( path );
-  if ( !std::filesystem::exists( f_path ) ) {
-    if ( f_path.has_parent_path( ) )
-      std::filesystem::create_directories( f_path.parent_path( ) );
-    std::ofstream file{ path, std::ios::app };
-    if ( file.is_open( ) ) {
-      file.write( contents.data( ), contents.size( ) );
-      file.close( ); 
-    }
-  } else {
-    std::ofstream file{ path, std::ios::app };
-    if ( file.is_open( ) ) {
-      file.write( contents.data( ), contents.size( ) );
-      file.close( );
-    }
-  }
+void tool_manager::write_file(const std::string& path, const std::string& contents) {
+  std::string result;
+  write_file(path, std::string_view(contents), result);
 }
-
-void tool_manager::write_file( const std::string& path, const std::string_view contents, std::string& ret ) {
-  ret.clear( );
-  ret.reserve( 100 );
-  auto f_path = std::filesystem::path( path );
-  if ( !std::filesystem::exists( f_path ) ) {
-    ret.append( "log: file path doesnt exist\n" );
-    if ( f_path.has_parent_path( ) ) {
-      ret.append( "log: creating parent dirs\n" );
-      std::filesystem::create_directories( f_path.parent_path( ) );
-    }
-    ret.append( "log: creating file " );
-    ret.append( path );
-    ret.append( "\n" );
-    std::ofstream file{ path, std::ios::app };
-    if ( file.is_open( ) ) {
-      ret.append( "log: successfully created and opened the file\n" );
-      file.write( contents.data( ), contents.size( ) );
-      ret.append( "log: written " );
-      ret.append( std::to_string( contents.size( ) ) );
-      ret.append( " bytes\n" );
-      file.close( );
-      return;
-    }
-    else {
-      ret.append( "error: failed to create or open file\n" );
-      return;
-    }
-  } else {
-    ret.append( "log: file exists, trying to append to the file\n" );
-    std::ofstream file{ path, std::ios::app };
-    if ( file.is_open( ) ) {
-      ret.append( "log: successfully opened the file\n" );
-      file.write( contents.data( ), contents.size( ) );
-      ret.append( "log: written " );
-      ret.append( std::to_string( contents.size( ) ) );
-      ret.append( " bytes\n" );
-      file.close( );
-      return;
-    }
-    else {
-      ret.append( "error: failed to open file\n" );
-      return;
-    }
-  }
+void tool_manager::write_file(const std::string& path, std::string_view contents, std::string& ret) {
+  auto native = utils::native_path(path);
+  if (native.has_parent_path()) std::filesystem::create_directories(native.parent_path());
+  std::ofstream file(native, std::ios::binary | std::ios::app);
+  if (!file) { ret = "error: cannot open file for appending"; return; }
+  file.write(contents.data(), contents.size());
+  file.flush();
+  ret = file ? "Appended " + std::to_string(contents.size()) + " bytes" : "error: failed to write file";
 }
 
 void tool_manager::fetch_url( client_worker* client, std::string_view url, fetched_resource* ret ) {
@@ -391,23 +345,17 @@ void tool_manager::fetch_url( client_worker* client, std::string_view url, fetch
   client->header.clear( );
   client->buffer.clear( );
   client->req.request( );
-  size_t ptr; 
-  if ( ( ptr = client->header.find( "content-type: " ) ) != std::string::npos ) {
-    ptr += 14;
-    std::string_view type = client->header.subview( ptr, client->header.find( "\r\n", ptr ) - ptr );
-    size_t semi = type.find( ';' );
-    if ( semi != std::string_view::npos )
-      type = type.subview( 0, semi );
-    if ( type == "text/html" ) {
-      ret->mime = type;
-      ret->body.clear( );
-      this->trim_html_result( client->buffer, ret->body );
-    }
-  }
+  if (client->req.get_status_code() >= 400) throw std::runtime_error("URL returned HTTP " + std::to_string(client->req.get_status_code()));
+  ret->mime = client->req.get_content_type();
+  ret->body.clear();
+  if (ret->mime.starts_with("text/html")) trim_html_result(client->buffer, ret->body);
+  else if (ret->mime.starts_with("text/") || ret->mime.starts_with("application/json")) ret->body = client->buffer;
+  else ret->body = "Unsupported content type: " + ret->mime;
+
 }
 
 std::string_view tool_manager::trim_html_result( std::string_view data, std::string& out ) {
-  lxb_html_document_parse( this->document, reinterpret_cast<const u_char*>( data.data( ) ), data.size( ) );
+  lxb_html_document_parse( this->document, reinterpret_cast<const unsigned char*>( data.data( ) ), data.size( ) );
   this->extract_from_html( lxb_dom_interface_node( this->document ), out );
   return out;
 }
@@ -476,6 +424,22 @@ void tool_manager::load_tools_map( ) {
   // unordered map of arguements, and pass parameters to tool
   // after extracting to map from the json array 
 
+  tool_map.emplace("open_browser", [&](tool_context* context) {
+    std::string url(context->json["url"].get_string().value());
+    if (!url.starts_with("https://") && !url.starts_with("http://")) throw std::runtime_error("Browser URL must use HTTP or HTTPS");
+#ifdef _WIN32
+    auto path = utils::native_path(url);
+    auto result = ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(result) <= 32) throw std::runtime_error("Cannot open default browser");
+#else
+    pid_t pid = fork();
+    if (pid == 0) { execlp("xdg-open", "xdg-open", url.c_str(), static_cast<char*>(nullptr)); _exit(127); }
+    int status = 0;
+    if (pid < 0 || waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) throw std::runtime_error("Cannot open default browser");
+#endif
+    context->context->store_tool_result(context->tool_name, context->tool_id, "Opened URL in default browser");
+  });
+
   tool_map.emplace( "web_search", [&](tool_context* context) {
     // parse_arguements( context );
     calling_tool( "searching web..." );
@@ -541,7 +505,7 @@ void tool_manager::load_tools_map( ) {
   tool_map.emplace( "edit_file", [&](tool_context* context) {
     // parse_arguements( context );
     std::string path{ context->json["file"].get_string( ).value( ) };
-    ssize_t c = 1;
+    size_t c = 1;
     size_t o = 0;
     std::string_view old_text, new_text;
     old_text = context->json["old_text"].get_string( ).value( );
@@ -551,7 +515,7 @@ void tool_manager::load_tools_map( ) {
     if ( !count.error( ) ) c = count.get_int64( );
     if ( !offset.error( ) ) o = offset.get_uint64( );
     calling_tool( "editing file... ( " + path + " ) ..." );
-    edit_file( path, old_text, new_text, context->result.edit, c, o ); 
+    edit_file( utils::native_path(path), old_text, new_text, context->result.edit, c, o );
     context->context->store_tool_result( 
       context->tool_name, 
       context->tool_id, 
@@ -565,7 +529,7 @@ void tool_manager::load_tools_map( ) {
     std::string path{ context->json["path"].get_string( ).value( ) };
     calling_tool( "listing dir ( " + path + " )..." );
     list_directories( 
-      context->json["path"].get_string( ).value( ), 
+      utils::native_path(context->json["path"].get_string().value()),
       &context->result 
     );
     context->context->store_tool_result( 
@@ -579,7 +543,9 @@ void tool_manager::load_tools_map( ) {
   tool_map.emplace( "connect_to_tcp", [&](tool_context* context) {
     // parse_arguements( context );
     std::string ip{ context->json["ip"].get_string( ).value( ) };
-    short port = context->json["port"].get_uint32( ).value( );
+    auto port_value = context->json["port"].get_uint64().value();
+    if (port_value == 0 || port_value > 65535) throw std::runtime_error("TCP port must be 1..65535");
+    uint16_t port = static_cast<uint16_t>(port_value);
     calling_tool( "connecting to ( " + ip + ":" + std::to_string( port ) + " )..." );
     connect_to_tcp( ip, port, context->result.str );
     context->context->store_tool_result( 
@@ -610,7 +576,7 @@ void tool_manager::load_tools( const std::filesystem::path& path ) {
   tool_str.reserve( 4096 );
   for ( const auto& entry : dir ) {
     if ( entry.is_regular_file( ) && entry.path( ).extension( ) == ".tool" ) {
-      f.open( entry.path( ) );
+      f.open(entry.path(), std::ios::binary);
       if ( f.is_open( ) ) {
         f.seekg( 0, std::ios::end );
         size_t len = f.tellg( );
@@ -618,6 +584,7 @@ void tool_manager::load_tools( const std::filesystem::path& path ) {
         if ( len > tool_str.size( ) ) tool_str.resize( len );
         f.read( tool_str.data( ), len );
         auto doc = yyjson_read( tool_str.data( ), len, 0 );
+        if (!doc) throw std::runtime_error("Invalid tool definition: " + utils::path_text(entry.path()));
         auto root = yyjson_doc_get_root( doc );
         this->tools.emplace_back( doc, root );
         f.close( );
@@ -634,7 +601,8 @@ void tool_manager::init( ) {
   web_client.req.set_url( "https://api.tavily.com/search" );
   web_client.req.set_http_method_post( );
   web_client.req.set_custom_option_list( "Content-Type", "application/json" );
-  std::string key = std::getenv( "TAVILY_API_KEY" );
+  const char* api_key = std::getenv("TAVILY_API_KEY");
+  std::string key = api_key ? api_key : "";
   web_client.req.set_custom_option_list( "Authorization", "Bearer " + key );
   web_client.req.set_body_write_cb( web_write_cb );
   web_client.req.set_body_cb_data( &web_client.buffer );
@@ -655,6 +623,8 @@ tool_manager::tool_manager( ) {
 }
 
 tool_manager::~tool_manager( ) {
+  lxb_html_document_destroy(document);
+  free(json_str);
   for ( auto& tool : tools )
     tool.release( );
 }
@@ -678,13 +648,14 @@ char* tool_result::data( ) {
 void tool_result::clear( ) {
   if ( json != nullptr ) {
     free( json );
-    json == nullptr;
+    json = nullptr;
   }
   str.clear( );
   len = 0;
 };
 
 tool_result::~tool_result( ) {
+  free(edit_storage.json);
   if ( json != nullptr ) free( json );
 }
 

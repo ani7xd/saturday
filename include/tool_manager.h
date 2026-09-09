@@ -44,8 +44,10 @@ struct edit_result {
 
 struct tool_result {
   std::string str;
-  fetched_resource* resource;
-  edit_result* edit;
+  fetched_resource resource_storage;
+  fetched_resource* resource = &resource_storage;
+  edit_result edit_storage;
+  edit_result* edit = &edit_storage;
   char* json;
   size_t len;
   void* ctx;
@@ -60,7 +62,7 @@ struct tool_result {
 struct tool_context {
   simdjson::ondemand::parser parser;
   simdjson::padded_string json_str;
-  simdjson::fallback::ondemand::document_stream::iterator::value_type json;
+  simdjson::ondemand::document json;
   bool tool_call;
   std::string tool_arguments_json;
   std::string tool_name;
@@ -113,7 +115,7 @@ public:
   void get_global_time( std::string region );
 
   // void tool_open_browser_window_url( std::string url );
-  void connect_to_tcp( const std::string& ip, short port, std::string& ret );
+  void connect_to_tcp( const std::string& ip, uint16_t port, std::string& ret );
   void send_data_tcp( std::string_view data, std::string& ret );
 
   std::string_view trim_web_result_json( std::string_view data );
@@ -131,7 +133,7 @@ public:
   simdjson::ondemand::parser parser;
   std::string trimmed_web_result;
   size_t len;
-  char* json_str;
+  char* json_str = nullptr;
   lxb_html_document_t* document;
   using handler = std::function<void(tool_context*)>;
   std::unordered_map<std::string_view, handler> tool_map;

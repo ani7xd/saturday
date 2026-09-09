@@ -1,10 +1,11 @@
 #include "../include/http.h"
-#include <stacktrace>
+#include <stdexcept>
+
 
 void http::request( ) {
   CURLcode ret = curl_easy_perform( this->curl );
   if ( ret != CURLE_OK) {
-    std::cerr << "failed to send request...\n";
+    throw std::runtime_error(std::string("HTTP request failed: ") + curl_easy_strerror(ret));
   //   throw std::runtime_error(
   //     std::format(
   //         "Database connection failed\n{}",
@@ -246,4 +247,9 @@ http::~http( ) {
     curl_global_cleanup( );
     global_init = false;
   }
+}
+std::string http::get_content_type() {
+  char* type = nullptr;
+  curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &type);
+  return type ? type : "";
 }

@@ -2,7 +2,7 @@
   "type": "function",
   "function": {
     "name": "send_data_tcp",
-    "description": "Send text data to the currently connected TCP server and wait for its response.",
+    "description": "Send text data to the currently connected TCP server and report how many bytes were sent.",
     "parameters": {
       "type": "object",
       "properties": {

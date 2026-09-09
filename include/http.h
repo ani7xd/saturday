@@ -77,6 +77,7 @@ public:
   static void* get_private_data( CURL* curl );
   void* get_body_cb_data( );
   long get_status_code( );
+  std::string get_content_type();
   bool get_status_ok( );
 protected:
   void* body_cb_data;

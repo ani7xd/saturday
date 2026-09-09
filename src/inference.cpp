@@ -69,7 +69,7 @@ void inference::init( ) {
 }
 
 void inference::load_from_file( const std::filesystem::path& path ) {
-  this->model = llama_model_load_from_file( path.c_str( ), model_params );
+  this->model = llama_model_load_from_file( path.string().c_str(), model_params );
   if ( !model ) {
     std::cerr << "Failed to load model\n";
     llama_backend_free( );

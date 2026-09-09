@@ -1,4 +1,9 @@
+#ifdef _WIN32
+#include <windows.h>
+#include <mmsystem.h>
+#else
 #include <alsa/asoundlib.h>
+#endif
 #include <cstdint>
 #include <cmath>
 #include <iostream>
@@ -17,17 +22,24 @@ public:
 public:
   int initialize( const std::string& device );
   int initialize( const std::string& device, uint32_t channels, uint32_t sample_rate, uint32_t frames );
-  inline void capture_frames( uint32_t _frames, int16_t* _buffer );
-  inline void convert_int16_to_pcm( uint32_t _frames, const int16_t* src, float_t* dest );
-  inline uint32_t seconds_to_frames( uint32_t _seconds, uint32_t _sample_rate );
-  inline uint32_t frames_to_bytes( uint32_t _frames, uint32_t _channels, uint32_t _bytes_per_sample );
+  void capture_frames( uint32_t _frames, int16_t* _buffer );
+  void convert_int16_to_pcm( uint32_t _frames, const int16_t* src, float_t* dest );
+  uint32_t seconds_to_frames( uint32_t _seconds, uint32_t _sample_rate );
+  uint32_t frames_to_bytes( uint32_t _frames, uint32_t _channels, uint32_t _bytes_per_sample );
   const std::vector<float>& voice_in_parts( uint32_t sec );
   const std::vector<float>& voice( uint32_t seconds );
   void clear_voice( );
   void clear_cache( );
 private:
+#ifndef _WIN32
   snd_pcm_hw_params_t* params;
+#endif
+#ifdef _WIN32
+  HWAVEIN handle = nullptr;
+  HANDLE audio_event = nullptr;
+#else
   snd_pcm_t* handle;
+#endif
   uint32_t channels;
   uint32_t sample_rate;
   uint32_t frames;

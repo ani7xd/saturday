@@ -1,9 +1,7 @@
 #include "database.h"
 #include "json.h"
 #include <simdjson.h>
-extern "C" {
-  #include <b64/cencode.h>
-}
+
 
 #if !defined( _ANI_CONVERSE_H )
 
@@ -17,6 +15,7 @@ struct tool_data {
 class memory {
 public:
   void init( );
+  void select_model(std::string name, bool tools, bool thinking);
   std::string_view create_tool_call( std::string_view name, std::string_view func_desc, std::string_view param_desc );
   std::string_view load_conversation_beta( );
   std::string_view load_conversation( );
@@ -38,13 +37,16 @@ public:
   memory( );
   ~memory( );
 private:
+  std::string selected_model = "gemma3:12b";
+  bool supports_tools = false;
+  bool supports_thinking = false;
   database db;
   statement store_stmt;
   statement ret_stmt;
   statement system_prompt_store_stmt;
   statement system_prompt_retrieve_stmt;
   std::vector<tool_data> tools_info;
-  char* json_str;
+  char* json_str = nullptr;
   size_t len;
   std::string img_buffer;
   std::string role, message_type, content, images;

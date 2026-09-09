@@ -1,41 +1,24 @@
 #include "../include/text_stream.h"
 
-void context_stream::push( std::string_view data ) {
+void context_stream::push(std::string_view data) {
   {
-    std::lock_guard lock( mtx );
-    stream.push( { data.data( ), data.size( ) } );
+    std::lock_guard lock(mtx);
+    if (closed) return;
+    stream.emplace(data);
   }
-  eventfd_write( event_fd, 1 );
+  ready.notify_one();
 }
-
-void context_stream::consume( ) {
-  epoll_wait( epoll, r_evs, 5, -1 );
-  eventfd_t value;
-  eventfd_read( event_fd, &value );
-  while ( value > 0 ) {
-    {
-      std::lock_guard lock( mtx );
-      std::cout << stream.front( );
-      stream.pop( );
-    }
-    value--;
-  }
+bool context_stream::consume() {
+  std::unique_lock lock(mtx);
+  ready.wait(lock, [&] { return closed || !stream.empty(); });
+  if (stream.empty()) return false;
+  auto text = std::move(stream.front());
+  stream.pop();
+  lock.unlock();
+  std::cout << text << std::flush;
+  return true;
 }
-
-context_stream::context_stream( ) {
-  epoll = epoll_create1( EPOLL_CLOEXEC );
-  if ( epoll == -1 ) {
-    std::cout << strerror( errno ) << "\n";
-    return;
-  }
-  event_fd = eventfd( 0, EFD_NONBLOCK | EFD_CLOEXEC );
-  ev = { };
-  ev.data.ptr = this;
-  ev.events = EPOLLIN;
-  epoll_ctl( epoll, EPOLL_CTL_ADD, event_fd, &ev );
-}
-
-context_stream::~context_stream( ) {
-  close( event_fd );
-  close( epoll );
+void context_stream::close() {
+  { std::lock_guard lock(mtx); closed = true; }
+  ready.notify_all();
 }

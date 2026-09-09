@@ -2,7 +2,7 @@
   "type": "function",
   "function": {
     "name": "open_browser",
-    "description": "Open a URL in a new tab in the local Waterfox browser.",
+    "description": "Open a URL in a new tab in the system default browser.",
     "parameters": {
       "type": "object",
       "properties": {

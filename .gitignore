@@ -1,18 +1,52 @@
-build/
-libs/
-.CMakeLists.txt
-obj/
-test/
-models/
-marionette/
-images/
+# Private credentials: only the example belongs in Git
+.env
+.env.*
+!.env.example
 creds/
+*.pem
+*.key
+
+# Build output and downloaded dependencies
+build/
+build-*/
+cmake-build-*/
+libs/
+obj/
+*.exe
+*.dll
+*.obj
+*.o
+*.a
+*.lib
+*.pdb
+*.ilk
+CMakeUserPresets.json
+
+# Local data and logs
+models/
+images/
 files/
+audio.raw
+*.log
+*.dump
+*.sql.gz
+
+# Editors and backups
 .vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.bak
+*.tmp
+
+# Existing local experiments
+.CMakeLists.txt
+test/
+marionette/
 project/
 main2.cpp
 clear
 clear_db.cpp
-.env
 gf_prompt
 prompt

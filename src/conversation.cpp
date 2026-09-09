@@ -1,4 +1,6 @@
 #include "../include/conversation.h"
+#include "../include/config.h"
+#include <filesystem>
 
 std::string_view memory::load_conversation( ) {
   ret_stmt.result.bind( 0, role );
@@ -21,7 +23,10 @@ std::string_view memory::load_conversation( ) {
   while ( ( ret = this->db.fetch( this->ret_stmt ) ) == 0 )
   {
     yyjson_mut_val* msg = yyjson_mut_obj( doc );
-    yyjson_mut_obj_add_strncpy( doc, msg, "role", role.data( ), this->ret_stmt.result.lengths[0] );
+    std::string_view stored_role(role.data(), ret_stmt.result.lengths[0]);
+    if (!supports_tools && stored_role == "tool")
+      yyjson_mut_obj_add_strcpy(doc, msg, "role", "user");
+    else yyjson_mut_obj_add_strncpy(doc, msg, "role", stored_role.data(), stored_role.size());
     if ( !this->load_tool_calls( doc, msg, &this->ret_stmt ) ) {
       yyjson_mut_obj_add_strncpy( doc, msg, "content", content.data( ), this->ret_stmt.result.lengths[2] );
     }
@@ -35,15 +40,16 @@ std::string_view memory::load_conversation( ) {
 }
 
 void memory::set_brainwash_data( yyjson_mut_doc* doc, yyjson_mut_val* root ) {
-  yyjson_mut_obj_add_str( doc, root, "model", /*"qwen3.5:9b"*/ "gemma4:12b" /*"sorc/qwen3.5-claude-4.6-opus:9b"*/ );
+  const auto& model_name = selected_model;
+  yyjson_mut_obj_add_strcpy(doc, root, "model", model_name.c_str());
   yyjson_mut_obj_add_bool( doc, root, "stream", true );
-  yyjson_mut_obj_add_bool( doc, root, "think", true );
+  if (supports_thinking) yyjson_mut_obj_add_bool(doc, root, "think", true);
   yyjson_mut_obj_add_int( doc, root, "keep_alive", -1 );
   yyjson_mut_val* options = yyjson_mut_obj( doc );
   yyjson_mut_obj_add_val( doc, root, "options", options );
   yyjson_mut_obj_add_int( doc, options, "num_predict", -1 );
   yyjson_mut_obj_add_int( doc, options, "num_ctx", 32768 ); 
-  this->load_tools_data( doc, root );
+  if (supports_tools) this->load_tools_data( doc, root );
 }
 
 void memory::load_system_prompt( yyjson_mut_doc* doc, yyjson_mut_val* msgs ) {
@@ -60,6 +66,15 @@ void memory::load_system_prompt( yyjson_mut_doc* doc, yyjson_mut_val* msgs ) {
 }
 
 bool memory::load_tool_calls( yyjson_mut_doc* doc, yyjson_mut_val* msg, statement* stmt ) {
+  if (!supports_tools) {
+    auto type = std::string_view(message_type.data(), stmt->result.lengths[1]);
+    if (type == "tool_call" || type == "tool_result") {
+      std::string text = "[Previous " + std::string(type) + "] " + std::string(content.data(), stmt->result.lengths[2]);
+      yyjson_mut_obj_add_strcpy(doc, msg, "content", text.c_str());
+      return true;
+    }
+    return false;
+  }
   if ( std::string_view( role.data( ), stmt->result.lengths[0] ) == "tool" ) {
     auto j_str = simdjson::padded_string( content.data( ), stmt->result.lengths[2] );
     auto j = this->parser.iterate( j_str );
@@ -79,6 +94,7 @@ bool memory::load_tool_calls( yyjson_mut_doc* doc, yyjson_mut_val* msg, statemen
     yyjson_val* tool_val = yyjson_doc_get_root( tool_str );
     yyjson_mut_val* tool_call = yyjson_val_mut_copy( doc, tool_val );
     yyjson_mut_arr_add_val( tool_calls, tool_call );
+    yyjson_doc_free(tool_str);
     return true;
   } else return false;
 }
@@ -97,7 +113,7 @@ void memory::load_images( yyjson_mut_doc* doc, yyjson_mut_val* msg ) {
       yyjson_arr_foreach( imgs_root, idx, max, val ) {
         std::string_view path = yyjson_get_str( val );
         b64.clear( );
-        f.open( std::string( path ), std::ios::binary );
+        f.open(std::filesystem::u8path(path.begin(), path.end()), std::ios::binary);
         if ( f.is_open( ) ) {
           f.seekg( 0, std::ios::end );
           size_t len = f.tellg( );
@@ -125,12 +141,18 @@ void memory::load_tools_data( yyjson_mut_doc* doc, yyjson_mut_val* root ) {
 }
 
 void memory::encode_image( std::string_view data, std::string& out ) {
-  base64_encodestate state; 
-  base64_init_encodestate( &state );
-  out.resize( data.size( ) * 2 );
-  size_t len = base64_encode_block( data.data( ), data.size( ), out.data( ), &state );
-  len += base64_encode_blockend( out.data( ) + len , &state );
-  out.resize( len );
+  static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  out.clear();
+  out.reserve(((data.size() + 2) / 3) * 4);
+  for (size_t i = 0; i < data.size(); i += 3) {
+    const unsigned a = static_cast<unsigned char>(data[i]);
+    const unsigned b = i + 1 < data.size() ? static_cast<unsigned char>(data[i + 1]) : 0;
+    const unsigned c = i + 2 < data.size() ? static_cast<unsigned char>(data[i + 2]) : 0;
+    out += alphabet[a >> 2];
+    out += alphabet[((a & 3) << 4) | (b >> 4)];
+    out += i + 1 < data.size() ? alphabet[((b & 15) << 2) | (c >> 6)] : '=';
+    out += i + 2 < data.size() ? alphabet[c & 63] : '=';
+  }
 }
 
 void memory::store_tool_result( std::string_view tool_name, std::string_view tool_id, std::string_view data ) {
@@ -231,10 +253,13 @@ void memory::add_tools( tool_data* tools, size_t n_tools ) {
 
 void memory::init( ) {
   db.initialize( );
-  std::string_view username = std::getenv( "DATABASE_USERNAME" );
-  std::string_view password = std::getenv( "DATABASE_PASSWORD" );
-  std::string_view path = std::getenv( "DATABASE_PATH" );
-  std::string_view host = std::getenv( "DATABASE_HOST" );
+  std::string username = utils::env("DATABASE_USERNAME");
+  std::string password = utils::env("DATABASE_PASSWORD");
+  std::string path = utils::env("DATABASE_PATH");
+  std::string host = utils::env("DATABASE_HOST");
+  if (host.empty()) host = "127.0.0.1";
+  if (path.empty()) path = "saturday";
+  if (username.empty()) throw std::runtime_error("Set DATABASE_USERNAME in .env");
   db.connect( host, username, password, path );
   std::string store_sql, ret_sql;
   std::string system_retrieve_sql, system_store_sql;
@@ -265,5 +290,11 @@ memory::memory( ) {
 }
 
 memory::~memory( ) {
+  free(json_str);
 
+}
+void memory::select_model(std::string name, bool tools, bool thinking) {
+  selected_model = std::move(name);
+  supports_tools = tools;
+  supports_thinking = thinking;
 }

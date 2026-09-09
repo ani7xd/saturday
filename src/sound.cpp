@@ -1,3 +1,4 @@
+#ifndef _WIN32
 #include "../include/sound.h"
 
 void sound::speak( const float* data, size_t n_samples ) {
@@ -35,3 +36,4 @@ sound::sound( ) {
 sound::~sound( ) {
 
 }
+#endif
