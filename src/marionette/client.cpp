@@ -1,111 +1,209 @@
-#include "../include/client.h"
+#include "../../include/marionette/client.h"
 
-error_t client::recv( ) {
+ssize_t client::sendv( iovec* v, size_t n ) {
+  this->ev.events = EPOLLOUT; 
+  epoll_ctl( this->epoll, EPOLL_CTL_MOD, this->fd, &this->ev );
+  s_bytes = 0;
+  size_t index = 0;
+  ssize_t bytes;
+  while ( n > index ) {
+    epoll_wait( epoll, &ev, 1, -1 );  
+    bytes = ::writev( fd, v + index, n - index );
+    if ( bytes > 0 ) {
+      while ( index < n && bytes >= v[index].iov_len ) {
+        bytes -= v[index].iov_len;
+        index++;
+      }
+      v[index].iov_base = static_cast<char*>( v[index].iov_base ) + bytes;
+      v[index].iov_len -= bytes;
+      s_bytes += bytes;
+    }
+    else if ( bytes == -1 ) {
+      if ( errno == EAGAIN || errno == EINTR ) continue;
+      else {
+        this->err = errno;
+        std::cout << "error sendv: " << strerror( errno ) << "\n";
+        break;
+      }
+    }
+    else break;
+  //   if ( bytes == -1 ) {
+  //     if ( errno == EAGAIN || errno == EINTR ) continue;
+  //     else {
+  //       this->err = errno;
+  //       std::cout << "error sendv: " << strerror( errno ) << "\n";
+  //       return;
+  //     }
+  //   }
+  //   else if ( bytes == 0 ) continue;
+  //   else {
+  //     while ( index < n && bytes >= v[index].iov_len ) {
+  //       bytes -= v[index].iov_len;
+  //       index++;
+  //     }
+  //     v[index].iov_base = static_cast<char*>( v[index].iov_base ) + bytes;
+  //     v[index].iov_len -= bytes;
+  //   }
+  // }
+  }
+  return s_bytes;
+}
+
+// implement recvv
+// and properly
+ssize_t client::recvv( const struct iovec* vec, size_t nvec ) {
+  // might need later
+  // if ( vec == nullptr || nvec == 0 ) {
+  //   u_err = "vec is NULL or vec count is 0";
+  //   return -1;
+  // }
   this->ev.events = EPOLLIN; 
   epoll_ctl( this->epoll, EPOLL_CTL_MOD, this->fd, &this->ev );
-  ssize_t ret;
+  ssize_t bytes;
+  this->r_bytes = 0;
+  while ( true ) {
+    epoll_wait( epoll, &ret_ev, 1, -1 );
+    bytes = ::readv( fd, vec, nvec );
+    if ( bytes > 0 ) {
+      r_bytes += bytes;
+    }
+    else if ( bytes == 0 ) {
+      u_err = "connection shutdown";
+      break;
+    }
+    else {
+      err = errno;
+      u_err = "recv v failed"; 
+      return -1;
+    }
+  }
+  return r_bytes;
+}
+
+ssize_t client::recv( ) {
+  this->ev.events = EPOLLIN; 
+  epoll_ctl( this->epoll, EPOLL_CTL_MOD, this->fd, &this->ev );
+  ssize_t bytes;
   this->r_bytes = 0;
   while ( true ) {
     epoll_wait( this->epoll, &this->ret_ev, 1, -1 );
-    ret = ::recv( this->fd, this->buffer.data( ), this->buffer.size( ), 0 );
-    if ( ret > 0 ) {
-      if ( this->receive_cb( this->buffer.data( ), ret, receive_cb_ctx ) == recv_status::finish ) {
-        return 0;
-      }
+    bytes = ::recv( this->fd, this->buffer.data( ), this->buffer.size( ), 0 );
+    if ( bytes > 0 ) {
+      if ( this->receive_cb( this->buffer.data( ), bytes, receive_cb_ctx ) == recv_status::finish ) break;
+      else continue;
     } 
-    else if ( ret == 0 ) {
-      std::cout << "connection closed...\n";
-      return 0;
+    else if ( bytes == 0 ) {
+      u_err = "recv failed: connection closed";
+      break;
     }
     else {
       if ( errno == EAGAIN || errno == EWOULDBLOCK ) continue;
       else {
-        error( "recv failed" );
-        return -2;
+        err = errno;
+        u_err = "recv failed";
+        // error( "recv failed" );
+        return -1;
       }
     }
   };
+  return r_bytes;
 }
 
-error_t client::send( std::string_view data ) {
+ssize_t client::send( std::string_view data ) {
   this->ev.events = EPOLLOUT;
   epoll_ctl( this->epoll, EPOLL_CTL_MOD, this->fd, &this->ev );
-  ssize_t ret = 0;
+  ssize_t bytes = 0;
   this->s_bytes = 0;
   do {
     epoll_wait( this->epoll, &this->ret_ev, 1, -1 );
-    ret = ::send( this->fd, data.data( ) + this->s_bytes, data.size( ) - this->s_bytes, 0 );
-    if ( ret > 0 ) {
-      this->s_bytes += ret;
-    } 
+    bytes = ::send( this->fd, data.data( ) + this->s_bytes, data.size( ) - this->s_bytes, 0 );
+    if ( bytes > 0 ) {
+      this->s_bytes += bytes;
+    }
     else {
-      error( "send failed" );
-      return -2;
+      if ( errno == EAGAIN || errno == EWOULDBLOCK )
+        continue;
+      else {
+        err = errno;
+        // error( "send failed" );
+        u_err = "send failed";
+        return -1;
+      }
     }
   } while ( this->s_bytes != data.size( ) );
-  return 0;
+  return s_bytes;
 }
 
-error_t client::send( const void* data, size_t len ) {
+ssize_t client::send( const void* data, size_t len ) {
   this->ev.events = EPOLLOUT;
   epoll_ctl( this->epoll, EPOLL_CTL_MOD, this->fd, &this->ev );
-  ssize_t ret = 0;
+  ssize_t bytes = 0;
   this->s_bytes = 0;
   do {
     epoll_wait( this->epoll, &this->ret_ev, 1, -1 );
-    ret = ::send( this->fd, ( ( char* ) data ) + this->s_bytes, len - this->s_bytes, 0 );
-    if ( ret > 0 ) {
-      this->s_bytes += ret;
+    bytes = ::send( this->fd, ( ( char* ) data ) + this->s_bytes, len - this->s_bytes, 0 );
+    if ( bytes > 0 ) {
+      this->s_bytes += bytes;
     } 
     else {
-      error( "send failed" );
-      error_str = strerror( errno );
-      return -2;
+      if ( errno == EAGAIN || errno == EWOULDBLOCK )
+        continue;
+      else {
+        err = errno;
+        u_err = "send failed";
+        // error( "send failed" );
+        return -1;
+      }
     }
   } while ( this->s_bytes != len );
-  return 0;
+  return s_bytes;
 }
 
-error_t client::connect( const std::string& ip, uint32_t port ) {
+int client::connect( const std::string& ip, uint32_t port ) {
   ev.events = EPOLLOUT;
   ev.data.fd = this->fd;
   epoll_ctl( this->epoll, EPOLL_CTL_ADD, this->fd, &this->ev );
   sockaddr_in addr = { };
   addr.sin_family = AF_INET;
   addr.sin_port = htons( port );
-  if ( inet_pton( AF_INET, ip.data( ), &addr.sin_addr ) != 1 ) {
-    error( "conversion failed" );
-    error_str = "error: ip conversion to network byte failed: ";
-    error_str += strerror( errno );
+  int ret;
+  if ( ( ret = inet_pton( AF_INET, ip.data( ), &addr.sin_addr ) ) != 1 ) {
+    // error( "conversion failed" );
+    this->u_err = "ip conversion to network byte failed";
+    if ( ret == -1 ) err = errno;
     return -1;
   }
   else {
-    if ( ::connect( this->fd, ( sockaddr* ) &addr, sizeof( addr ) ) == 0 ) {
-      std::cout << "connected successfully...\n";
-      error_str = "log: connected successfully";
-      return 0;
-    }
+    if ( ::connect( this->fd, ( sockaddr* ) &addr, sizeof( addr ) ) == 0 ) return 0;
     else if ( errno == EINPROGRESS ) {
+      int code;
+      socklen_t len = sizeof( code );
       epoll_wait( this->epoll, &this->ret_ev, 1, -1 );
-      socklen_t len = sizeof( err );
-      getsockopt( this->fd, SOL_SOCKET, SO_ERROR, &err, &len );
-      if ( this->err == 0 ) {
-        std::cout << "connected successfully...\n";
-        error_str = "log: connected successfully";
-        return 0;
-      }
+      getsockopt( this->fd, SOL_SOCKET, SO_ERROR, &code, &len );
+      if ( code == 0 ) return 0;
       else {
-        error( "connection failed", this->err );
-        error_str = "connect failed: ";
-        error_str += strerror( err );
-        return -2;
+        // error( "connection failed", this->err );
+        err = code;
+        u_err = "connection failed";
+        return -1;
       }
+      // do {
+      //   epoll_wait( this->epoll, &this->ret_ev, 1, -1 );
+      //   getsockopt( this->fd, SOL_SOCKET, SO_ERROR, &code, &len );
+      //   if ( code == 0 ) return 0;
+      //   else {
+      //     // error( "connection failed", this->err );
+      //     err = code;
+      //     u_err = "connection failed";
+      //     return -1;
+      //   }
+      // } while ( code != 0 );
     }
     else {
-      error( "connection failed" );
-      error_str = "connect failed: ";
-      error_str += strerror( err );
-      return -2;
+      // error( "connection failed" );
+      err = errno;
+      u_err = "connection failed";
+      return -1;
     }
   }
 }
@@ -146,6 +244,10 @@ void client::error( std::string_view str ) {
 
 void client::error( std::string_view str, int err  ) {
   std::cout.write( str.data( ), str.size( ) ); std::cout << " : " << strerror( err ) << "\n";
+}
+
+char* client::error( ) {
+  return strerror( err );
 }
 
 client::client( ) : err( 0 ) {
