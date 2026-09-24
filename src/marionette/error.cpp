@@ -1,4 +1,4 @@
-#include "../include/error.h"
+#include "../../include/marionette/error.h"
 
 const char* error::excpt::what( ) const throw( ) {
   return err.c_str( );

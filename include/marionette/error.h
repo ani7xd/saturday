@@ -7,7 +7,7 @@
 #include <source_location>
 #include <stacktrace>
 #include <exception>
-#include <error.h>
+// #include <error.h>
 #include <simdjson.h>
 
 #if !defined( _ANI_ERROR_H )
