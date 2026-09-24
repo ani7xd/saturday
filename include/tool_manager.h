@@ -1,12 +1,11 @@
 #include "util.h"
 #include "http.h"
-#include <yyjson.h>
-#include <simdjson.h>
+#include "marionette/client.h"
+#include "memory.h"
+#include "marionette/marionette.h"
 #include <lexbor/html/html.h>
 #include <lexbor/selectors/selectors.h>
 #include <lexbor/css/css.h>
-#include "client.h"
-#include "conversation.h"
 
 #if !defined( _ANI_TOOL_MANAGER_H )
 
@@ -111,6 +110,7 @@ public:
   void image_reverse_search( void* data, size_t len );
   void get_local_time( std::string& data );
   void get_global_time( const std::string& region, std::string& ret );
+  void wait( uint64_t ms );
 
   // void tool_open_browser_window_url( std::string url );
   void connect_to_tcp( const std::string& ip, short port, std::string& ret );
@@ -120,7 +120,11 @@ public:
   std::string_view trim_web_result_str( std::string_view data, std::string& ret );
   std::string_view trim_html_result( std::string_view data, std::string& out );
   void extract_from_html( lxb_dom_node_t* node, std::string& out );
+  void to_agent( browser_element& e, std::string& out );
 public:
+  marionette puppet;
+  std::vector<browser_element> elements;
+  std::vector<browser_action> actions;
   client cl;
   client_worker web_client;
   client_worker page_client;
@@ -130,6 +134,8 @@ public:
   size_t end;
   simdjson::ondemand::parser parser;
   std::string trimmed_web_result;
+  fetched_resource fetch_res;
+  edit_result edit_res;
   size_t len;
   char* json_str;
   lxb_html_document_t* document;

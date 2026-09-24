@@ -20,8 +20,8 @@ void tool_manager::connect_to_tcp( const std::string& ip, short port, std::strin
     ret = "log: connected successfully";
     return;
   }
-  ret = "error: failed to connect: ";
-  ret += cl.error_str;
+  ret = "error: failed to connect";
+  // ret += cl.error_str;
 }
 
 void tool_manager::send_data_tcp( std::string_view data, std::string& ret ) {
@@ -31,14 +31,33 @@ void tool_manager::send_data_tcp( std::string_view data, std::string& ret ) {
     ret += " bytes";
   }
   else {
-    ret = "send failed: ";
-    ret += cl.error_str;
+    ret = "send failed";
+    // ret += cl.error_str;
   }
 }
 
 void tool_manager::call_tool( tool_context* context, tool_result* ret ) {
-  parse_arguements( context );
-  tool_map[context->tool_name](context);
+  try 
+  {
+    error::debug( parse_arguements( context ) );
+    tool_map[context->tool_name](context);
+  }
+  catch ( const error::excpt& excpt ) 
+  {
+    simdjson::ondemand::parser parser;
+    // auto j_str = excpt.err_str;
+    // auto json = parser.iterate( j_str );
+    // std::string_view err = json["error"].get_string( ).value( );
+    // std::string_view message = json["message"].get_string( ).value( );
+    context->result.str = "tool error\n";
+    context->result.str += excpt.usr_str;
+    context->result.str += "\nerror: ";
+    context->result.str += excpt.msg;
+    context->result.str += "\nmessage: ";
+    context->result.str += excpt.err_str;
+    context->context->store_tool_result( context->tool_name, context->tool_id, context->result.str );
+    context->result.clear( );
+  }
 }
 
 void tool_manager::parse_arguements( tool_context* context ) {
@@ -410,6 +429,10 @@ void tool_manager::fetch_url( client_worker* client, std::string_view url, fetch
   }
 }
 
+void tool_manager::wait( uint64_t ms ) {
+  std::this_thread::sleep_for( std::chrono::milliseconds( ms ) );
+}
+
 std::string_view tool_manager::trim_html_result( std::string_view data, std::string& out ) {
   lxb_html_document_parse( this->document, reinterpret_cast<const u_char*>( data.data( ) ), data.size( ) );
   this->extract_from_html( lxb_dom_interface_node( this->document ), out );
@@ -478,10 +501,10 @@ std::vector<tool_json>* tool_manager::get_tools( ) {
 void tool_manager::load_tools_map( ) {
   // a more sexy idea would be to add call_tool() with 
   // unordered map of arguements, and pass parameters to tool
-  // after extracting to map from the json array 
+  // after extracting to map from the json array
+  // ****idea implemented*****
 
   tool_map.emplace( "web_search", [&](tool_context* context) {
-    // parse_arguements( context );
     calling_tool( "searching web..." );
     web_search( &web_client, context->json["query"].get_string( ).value( ) );
     std::string_view trimmed_web_result_in_str = trim_web_result_str( web_client.buffer, context->result.str );
@@ -493,7 +516,6 @@ void tool_manager::load_tools_map( ) {
   });
     
   tool_map.emplace( "read_file", [&](tool_context* context) {
-    // parse_arguements( context );
     std::string path{ context->json["path"].get_string( ).value( ) };
     calling_tool( "reading file ( " + path + " )..." );
     read_file( path, context->result.str );
@@ -515,7 +537,6 @@ void tool_manager::load_tools_map( ) {
   });
 
   tool_map.emplace( "write_file", [&](tool_context* context) {
-    // parse_arguements( context );
     std::string path{ context->json["path"].get_string( ).value( ) };
     calling_tool( "writing to file ( " + path + " )..." );
     write_file( 
@@ -531,7 +552,6 @@ void tool_manager::load_tools_map( ) {
   });
   
   tool_map.emplace( "fetch_url", [&](tool_context* context) { 
-    // parse_arguements( context );
     std::string url{ context->json["url"].get_string( ).value( ) };
     calling_tool( "fetching url... ( " + url + " )" );
     fetch_url( &page_client, url, context->result.resource );
@@ -540,6 +560,7 @@ void tool_manager::load_tools_map( ) {
       context->tool_id,
       context->result.resource->body 
     );
+    context->result.clear( );
   });
   
   tool_map.emplace( "edit_file", [&](tool_context* context) {
@@ -565,12 +586,11 @@ void tool_manager::load_tools_map( ) {
   });
   
   tool_map.emplace( "list_dir", [&](tool_context* context) {
-    // parse_arguements( context );
     std::string path{ context->json["path"].get_string( ).value( ) };
     calling_tool( "listing dir ( " + path + " )..." );
     list_directories( 
-      context->json["path"].get_string( ).value( ), 
-      &context->result 
+      path,
+      &context->result
     );
     context->context->store_tool_result( 
       context->tool_name, 
@@ -581,7 +601,6 @@ void tool_manager::load_tools_map( ) {
   });
   
   tool_map.emplace( "connect_to_tcp", [&](tool_context* context) {
-    // parse_arguements( context );
     std::string ip{ context->json["ip"].get_string( ).value( ) };
     short port = context->json["port"].get_uint32( ).value( );
     calling_tool( "connecting to ( " + ip + ":" + std::to_string( port ) + " )..." );
@@ -589,19 +608,186 @@ void tool_manager::load_tools_map( ) {
     context->context->store_tool_result( 
       context->tool_name, 
       context->tool_id,
-      context->result.str );
+      context->result.str
+    );
+    context->result.clear( );
   });
   
   tool_map.emplace( "send_data_tcp", [&](tool_context* context) {
-    // parse_arguements( context );
-    std::string data;
-    data = context->json["data"].get_string( ).value( );
-    calling_tool( "sending data..." );
-    send_data_tcp( data, context->result.str );
+    try
+    {
+      std::string_view data = error::require( context->json["data"].get_string( ), "data" );
+      calling_tool( "sending data..." );
+      send_data_tcp( data, context->result.str );
+      context->context->store_tool_result( 
+        context->tool_name, 
+        context->tool_id, 
+        context->result.str 
+      );
+      context->result.clear( );
+    }
+    catch ( const error::excpt& e ) 
+    {
+      throw error::excpt( e.err_code, "send_tcp_data json arguement error", e.msg, e.err_str );
+    }
+  });
+
+  tool_map.emplace( "browser_navigate", [&](tool_context* context) {
+    try
+    {
+      std::string_view url = error::require( context->json["url"].get_string( ), "url" );
+      calling_tool( "navigating browser to url..." );
+      puppet.navigate_window( url );
+      context->result.str = "opened url (";
+      context->result.str += url;
+      context->result.str += ") in tab";
+      context->context->store_tool_result( 
+        context->tool_name, 
+        context->tool_id, 
+        context->result.str
+      );
+      context->result.clear( );
+    }
+    catch ( const error::excpt& e ) 
+    {
+      throw error::excpt( e.err_code, "browser_navigate json arguement error", e.msg, e.err_str );
+    }
+  });
+
+  tool_map.emplace( "browser_element_click", [&](tool_context* context) {
+    try {
+      auto id = error::require( context->json["id"].get_uint64( ), "id" );
+      calling_tool( "clicking element (" + std::to_string( id ) + " )..." );
+      if ( id >= elements.size( ) )
+        throw error::excpt( -1, "invalid element id", "element id out of range" );
+      puppet.element_click( elements[id].uuid );
+      context->result.str = "clicked element (";
+      context->result.str += std::to_string( id );
+      context->result.str += ") in tab";
+      context->context->store_tool_result( 
+        context->tool_name, 
+        context->tool_id, 
+        context->result.str
+      );
+      context->result.clear( );
+    }
+    catch ( const error::excpt& e ) 
+    {
+      throw error::excpt( e.err_code, "browser_element_click json error", e.msg, e.err_str );
+    }
+  });
+
+  tool_map.emplace( "browser_element_fill", [&](tool_context* context) {
+    try 
+    {
+      auto id = error::require( context->json["id"].get_uint64( ), "id" );
+      std::string_view text = error::require( context->json["text"].get_string( ), "text" );
+      calling_tool( "filling element ( " + std::to_string( id ) + " ) with content..." );
+      puppet.fill( elements[id].uuid, text );
+      context->result.str = "filled element (";
+      context->result.str += std::to_string( id );
+      context->result.str += ") with text in tab";
+      context->context->store_tool_result( 
+        context->tool_name, 
+        context->tool_id,
+        context->result.str
+      );
+      context->result.clear( );
+    }
+    catch ( const error::excpt& e ) 
+    {
+      throw error::excpt( e.err_code, "browser_element_fill error", e.msg, e.err_str );
+    }
+  });
+
+  tool_map.emplace( "browser_observe", [&](tool_context* context) {
+    calling_tool( "observing page..." );
+    puppet.observe( js_script, this->elements );
+    context->result.str.clear( );
+    for ( auto& e : elements ) { 
+      to_agent( e, context->result.str );
+    }
+    context->context->store_tool_result( 
+      context->tool_name,
+      context->tool_id,
+      context->result.str
+    );
+    context->result.clear( );
+  });
+
+  tool_map.emplace( "browser_screenshot", [&](tool_context* context) {
+    calling_tool( "taking a screenshot of the page..." );
+    std::vector<std::byte> data;
+    puppet.screenshot( data, true );
+    std::ofstream f{ "img.png" };
+    if ( f.is_open( ) ) {
+      f.write( reinterpret_cast<char*>( data.data( ) ), data.size( ) );
+      f.close( );
+    }
+    context->result.str = "page screenshot successfull";
+    std::string_view image = "img.png";
     context->context->store_tool_result( 
       context->tool_name, 
       context->tool_id, 
-      context->result.str 
+      context->result.str,
+      image
+    );
+    context->result.clear( );
+  });
+
+  tool_map.emplace( "browser_actions", [&](tool_context* context) {
+    try
+    {
+      calling_tool( "performing browser actions...." );
+      actions.clear( );
+      auto arr = error::require( context->json["actions"].get_array( ), "actions" );
+      size_t i = 0;
+      for ( auto item : arr ) {
+        auto obj = item.get_object( ).value( );
+        browser_action a;
+        a.source = error::require( obj["source"].get_string( ), "actions[].source" );
+        a.actions = error::require( obj["action"].get_string( ), "action[].action" );
+        if ( auto v = obj["target"].get_uint64( ); !v.error( ) ) {
+          a.uuid = elements[v.value( )].uuid;
+        }
+        if ( auto v = obj["x"].get_int64( ); !v.error( ) ) a.x = v.value( );
+        if ( auto v = obj["y"].get_int64( ); !v.error( ) ) a.y = v.value( );
+        if ( auto v = obj["button"].get_uint64( ); !v.error( ) ) a.button = static_cast<uint8_t>( v.value( ) );
+        if ( auto v = obj["delta_x"].get_int64( ); !v.error( ) ) a.delta_x = v.value( );
+        if ( auto v = obj["delta_y"].get_int64( ); !v.error( ) ) a.delta_y = v.value( );
+        if ( auto v = obj["duration"].get_uint64( ); !v.error( ) ) a.duration = v.value( );
+        if ( auto v = obj["key"].get_string( ); !v.error( ) ) a.key = v.value( );
+        if ( auto v = obj["text"].get_string( ); !v.error( ) ) a.text = v.value( );
+        actions.push_back( std::move( a ) );
+        i++;
+      }
+      packet p;
+      puppet.perform_actions( actions.data( ), actions.size( ), p );
+      context->result.str = "successfully performed all actions";
+      context->context->store_tool_result( 
+        context->tool_name, 
+        context->tool_id, 
+        context->result.str
+      );
+      context->result.clear( );
+    }
+    catch ( const error::excpt& e ) 
+    {
+      throw error::excpt( e.err_code, "browser_actions json arguement error", e.msg, e.err_str );
+    }
+  });
+
+  tool_map.emplace( "wait", [&](tool_context* context) {
+    auto duration = error::require( context->json["duration"].get_uint64( ), "duration" );
+    calling_tool( "Wating for " + std::to_string( duration ) + " ms" );
+    wait( duration );
+    context->result.str = "waited for ";
+    context->result.str += std::to_string( duration );
+    context->result.str += " milliseconds";
+    context->context->store_tool_result( 
+      context->tool_name,
+      context->tool_id,
+      context->result.str
     );
   });
 }
@@ -650,6 +836,11 @@ void tool_manager::init( ) {
   page_client.req.set_header_cb_data( &page_client.header );
   page_client.req.set_header_write_cb( web_write_cb );
   page_client.req.set_follow_redirect( true );
+
+  puppet.init( );
+  puppet.create_session( );
+  puppet.create_new_tab( );
+  puppet.switch_to_window( puppet.tab_handle );
 }
 
 tool_manager::tool_manager( ) {
@@ -706,6 +897,70 @@ int client_write_cb( void* ptr, size_t len, void* ctx ) {
 
 void calling_tool( std::string_view str ) {
   std::cout << TOOL << "[tool-call] " << str << RESET << "\n";
+}
+
+void tool_manager::to_agent( browser_element& e, std::string& out ) {
+  if ( !e.visible ) return;
+  out += '[';
+  out += std::to_string(e.id);
+  out += "] ";
+  out += e.tag;
+
+  if (!e.role.empty()) {
+      out += " | role=";
+      out += e.role;
+  }
+
+  if (!e.type.empty()) {
+      out += " | type=";
+      out += e.type;
+  }
+
+  if (!e.name.empty()) {
+      out += " | name=";
+      out += e.name;
+  }
+
+  if (!e.text.empty()) {
+      out += R"( | text=")";
+      out += e.text;
+      out += '"';
+  }
+
+  if (!e.value.empty()) {
+      out += R"( | value=")";
+      out += e.value;
+      out += '"';
+  }
+
+  if (!e.placeholder.empty()) {
+      out += R"( | placeholder=")";
+      out += e.placeholder;
+      out += '"';
+  }
+
+  if (!e.aria_label.empty()) {
+      out += R"( | aria=")";
+      out += e.aria_label;
+      out += '"';
+  }
+
+  if (!e.href.empty()) {
+      out += R"( | href=")";
+      out += e.href;
+      out += '"';
+  }
+
+  if (e.disabled)
+      out += " | disabled";
+
+  if (e.interactable)
+      out += " | interactable";
+
+  if (e.clickable)
+      out += " | clickable";
+
+  out += '\n';
 }
 
 
