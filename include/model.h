@@ -9,7 +9,6 @@
 size_t header_callback( char* ptr, size_t size, size_t nmemb, void* userdata );
 size_t write_callback( char* ptr, size_t size, size_t nmemb, void* userdata );
 size_t model_stream_callback( char* ptr, size_t size, size_t nmemb, void* userdata );
-void make_prompt( std::string& root, std::string_view value, std::string& ret );
 
 constexpr std::string_view THINKING = "\033[2;37m";
 

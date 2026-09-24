@@ -27,7 +27,7 @@ void model::send_prompt( std::string_view prompt, const std::vector<std::string>
     free( j_str );
     yyjson_mut_doc_free( doc );
   }
-  std::string_view data = conversation.load_conversation( );
+  std::string_view data = conversation.load_chat( );
   req.set_post_data( data );
   req.request( );
   handle_ctx( &model_context );
@@ -38,7 +38,7 @@ void model::handle_ctx( context* ctx ) {
   std::string_view data;
   while ( ctx->is_tool_call( ) ) {
     tool_call( &ctx->tool );
-    data = conversation.load_conversation( );
+    data = conversation.load_chat( );
     req.set_post_data( data );
     req.request( );
     i++;
@@ -47,9 +47,13 @@ void model::handle_ctx( context* ctx ) {
 }
 
 void model::init_async_reply( ) {
+  // std::ios::sync_with_stdio( false );
+  // std::cout.tie( nullptr );
   worker = std::jthread{ [&]( ){
+    model_context.stream.styling = false;
+    model_context.stream.pending_char = false;
     while ( true/*!token.stop_requested( )*/ ) {
-      model_context.stream.consume( );
+      model_context.stream.consume_even_better( );
     }
   }};
 }
@@ -68,14 +72,6 @@ void model::set_system_prompt( std::string_view prompt ) {
   conversation.store_system_prompt( prompt );
 }
 
-void make_prompt( std::string& root, std::string_view value, std::string& ret ) {
-  size_t ptr = root.find( "?" );
-  ret.append( root.data( ), ptr );
-  ret.append( value );
-  ret.append( root.subview( ptr + 1 ) );
-  return;
-}
-
 void model::initialize( ) {
   req.initialize( );
   req.set_url( "http://localhost:11434/api/chat" );
@@ -87,6 +83,8 @@ void model::initialize( ) {
   
   model_context.conversation = &this->conversation;
   model_context.tool.context = &this->conversation;
+  model_context.tool.result.resource = &tools.fetch_res;
+  model_context.tool.result.edit = &tools.edit_res;
   model_context.ctx = this;
   model_context.buffer.reserve( 1024 * 1024 );
   model_context.response.reserve( 4096 );
@@ -96,6 +94,7 @@ void model::initialize( ) {
   auto tools_info = tools.get_tools( );
   conversation.init( );
   conversation.add_tools( reinterpret_cast<tool_data*>( tools_info->data( ) ), tools_info->size( ) );
+  conversation.set_model_name( "qwen3.5:9b" /*"gemma4:12b"*/ );
   init_async_reply( );
   std::string prompt;
   char* path = std::getenv( "SYSTEM_PROMPT_PATH" );
@@ -230,5 +229,8 @@ model::model( ) : model_context( ) {
 }
 
 model::~model( ) {
+  std::cout << "cleaning up model...\n";
+  
+  std::cout << "closing model...\n";
 
 }
