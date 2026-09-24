@@ -1,4 +1,4 @@
-#include "../include/marionette.h"
+#include "../../include/marionette/marionette.h"
 
 void marionette::perform_actions( browser_action* actions, size_t n_actions, packet& p ) {
   p.create_doc_new( );
