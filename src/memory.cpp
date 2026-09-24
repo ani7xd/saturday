@@ -1,6 +1,51 @@
-#include "../include/conversation.h"
+#include "../include/memory.h"
 
-std::string_view memory::load_conversation( ) {
+yyjson_mut_val* memory::load_chat_tree( yyjson_mut_doc* doc ) {
+  ret_stmt.result.bind( 0, role );
+  ret_stmt.result.bind( 1, message_type );
+  ret_stmt.result.bind( 2, content );
+  ret_stmt.result.bind( 3, images );
+  ret_stmt.bind_result( );
+  yyjson_mut_val* root = yyjson_mut_obj( doc );
+  yyjson_mut_doc_set_root( doc, root );
+  this->set_brainwash_data( doc, root );
+  yyjson_mut_val* msgs = yyjson_mut_arr( doc );
+  messages = msgs;
+  yyjson_mut_obj_add_val( doc, root, "messages", msgs );
+  this->load_system_prompt( doc, msgs );
+  db.execute( this->ret_stmt );
+  int ret = 0;
+  while ( ( ret = this->db.fetch( this->ret_stmt ) ) == 0 )
+  {
+    yyjson_mut_val* msg = yyjson_mut_obj( doc );
+    yyjson_mut_obj_add_strncpy( doc, msg, "role", role.data( ), this->ret_stmt.result.lengths[0] );
+    if ( !this->load_tool_calls( doc, msg, &this->ret_stmt ) ) {
+      yyjson_mut_obj_add_strncpy( doc, msg, "content", content.data( ), this->ret_stmt.result.lengths[2] );
+    }
+    this->load_images( doc, msg );
+    yyjson_mut_arr_add_val( msgs, msg );
+  }
+  return root;
+}
+
+void memory::add_chat( std::string_view role, std::string_view content, std::string_view images ) {
+  yyjson_mut_val* msg = yyjson_mut_obj( doc );
+  yyjson_mut_obj_add_strncpy( doc, msg, "role", role.data( ), role.size( ) );
+  yyjson_mut_obj_add_strncpy( doc, msg, "content", content.data( ), role.size( ) );
+  // in progress for images support i guess
+  // yyjson_mut_obj_add_strncpy( doc, msg, "images", images.( ), role.size( ) );
+
+}
+
+void memory::add_chat( std::string_view role, std::string_view content ) {
+  yyjson_mut_val* msg = yyjson_mut_obj( doc );
+  yyjson_mut_obj_add_strncpy( doc, msg, "role", role.data( ), role.size( ) );
+  yyjson_mut_obj_add_strncpy( doc, msg, "content", content.data( ), role.size( ) );
+  yyjson_mut_obj_add_strcpy( doc, msg, "images", "[]" );
+  yyjson_mut_arr_add_val( messages, msg );
+}
+
+std::string_view memory::load_chat( ) {
   ret_stmt.result.bind( 0, role );
   ret_stmt.result.bind( 1, message_type );
   ret_stmt.result.bind( 2, content );
@@ -35,7 +80,7 @@ std::string_view memory::load_conversation( ) {
 }
 
 void memory::set_brainwash_data( yyjson_mut_doc* doc, yyjson_mut_val* root ) {
-  yyjson_mut_obj_add_str( doc, root, "model", /*"qwen3.5:9b"*/ "gemma4:12b" /*"sorc/qwen3.5-claude-4.6-opus:9b"*/ );
+  yyjson_mut_obj_add_str( doc, root, "model", model_name.c_str( ) /*"qwen3.5:9b"*/ /*"gemma4:12b"*/ /*"sorc/qwen3.5-claude-4.6-opus:9b"*/ );
   yyjson_mut_obj_add_bool( doc, root, "stream", true );
   yyjson_mut_obj_add_bool( doc, root, "think", true );
   yyjson_mut_obj_add_int( doc, root, "keep_alive", -1 );
@@ -84,34 +129,36 @@ bool memory::load_tool_calls( yyjson_mut_doc* doc, yyjson_mut_val* msg, statemen
 }
 
 void memory::load_images( yyjson_mut_doc* doc, yyjson_mut_val* msg ) {
-  if ( std::string_view( role.data( ), this->ret_stmt.result.lengths[0] ) == "user" ) {
-    yyjson_doc* imgs_doc = yyjson_read( this->images.data( ), this->ret_stmt.result.lengths[3], 0 );
-    yyjson_val* imgs_root = yyjson_doc_get_root( imgs_doc );
-    if ( yyjson_arr_size( imgs_root ) > 0 ) {
-      size_t idx, max;
-      yyjson_val* val;
-      yyjson_mut_val* imgs = yyjson_mut_arr( doc );
-      yyjson_mut_obj_add_val( doc, msg, "images", imgs );
-      std::string b64;
-      std::ifstream f;
-      yyjson_arr_foreach( imgs_root, idx, max, val ) {
-        std::string_view path = yyjson_get_str( val );
-        b64.clear( );
-        f.open( std::string( path ), std::ios::binary );
-        if ( f.is_open( ) ) {
-          f.seekg( 0, std::ios::end );
-          size_t len = f.tellg( );
-          this->img_buffer.resize( len );
-          f.seekg( 0, std::ios::beg );
-          f.read( this->img_buffer.data( ), this->img_buffer.size( ) );
-          encode_image( this->img_buffer, b64 );
-          yyjson_mut_arr_add_strncpy( doc, imgs, b64.data( ), b64.size( ) );
-          f.close( );
-        }
+  yyjson_doc* imgs_doc = yyjson_read( this->images.data( ), this->ret_stmt.result.lengths[3], 0 );
+  yyjson_val* imgs_root = yyjson_doc_get_root( imgs_doc );
+  if ( yyjson_arr_size( imgs_root ) > 0 ) {
+    size_t idx, max;
+    yyjson_val* val;
+    yyjson_mut_val* imgs = yyjson_mut_arr( doc );
+    yyjson_mut_obj_add_val( doc, msg, "images", imgs );
+    std::string b64;
+    std::ifstream f;
+    yyjson_arr_foreach( imgs_root, idx, max, val ) {
+      std::string_view path = yyjson_get_str( val );
+      b64.clear( );
+      f.open( std::string( path ), std::ios::binary );
+      if ( f.is_open( ) ) {
+        f.seekg( 0, std::ios::end );
+        size_t len = f.tellg( );
+        this->img_buffer.resize( len );
+        f.seekg( 0, std::ios::beg );
+        f.read( this->img_buffer.data( ), this->img_buffer.size( ) );
+        encode_image( this->img_buffer, b64 );
+        yyjson_mut_arr_add_strncpy( doc, imgs, b64.data( ), b64.size( ) );
+        f.close( );
       }
     }
-    yyjson_doc_free( imgs_doc );
   }
+  yyjson_doc_free( imgs_doc );
+  // if ( std::string_view( role.data( ), this->ret_stmt.result.lengths[0] ) == "user" ) {
+  //      //////  
+  //   yyjson_doc_free( imgs_doc );
+  // }
 }
 
 void memory::load_tools_data( yyjson_mut_doc* doc, yyjson_mut_val* root ) {
@@ -147,14 +194,32 @@ void memory::store_tool_result( std::string_view tool_name, std::string_view too
   yyjson_mut_doc_free( doc );
 }
 
+void memory::store_tool_result( std::string_view tool_name, std::string_view tool_id, std::string_view data, std::string_view images ) {
+  yyjson_mut_doc* doc = yyjson_mut_doc_new( nullptr );
+  yyjson_mut_val* root = yyjson_mut_obj( doc );
+  yyjson_mut_doc_set_root( doc, root );
+  yyjson_mut_obj_add_strn( doc, root, "tool_name", tool_name.data( ), tool_name.size( ) );
+  yyjson_mut_obj_add_strn( doc, root, "tool_call_id", tool_id.data( ), tool_id.size( ) );
+  yyjson_mut_obj_add_strn( doc, root, "content", data.data( ), data.size( ) );
+  size_t len;
+  char* j = yyjson_mut_write( doc, 0, &len );
+  std::string_view message( j, len );
+  yyjson_mut_doc_free( doc );
+  doc = yyjson_mut_doc_new( nullptr );
+  root = yyjson_mut_arr( doc );
+  yyjson_mut_doc_set_root( doc, root );
+  yyjson_mut_arr_add_strn( doc, root, images.data( ), images.size( ) );
+  char* image = yyjson_mut_write( doc, 0, &len );
+  this->store( "tool", "tool_result", message, std::string_view( image, len ) );
+  // if ( !images.empty( ) ) std::cout.write( j, len );
+  free( j );
+  free( image );
+  yyjson_mut_doc_free( doc );
+}
+
 // maybe not needed
 void memory::store_image( const std::vector<std::string_view>& path ) {
 
-}
-
-
-std::string_view memory::load_conversation_beta( ) {
-  return std::string_view( nullptr, 0 );
 }
 
 // ass code, will improve later **** HOPEFULLY ********
@@ -227,6 +292,10 @@ void memory::add_tools( tool_data* tools, size_t n_tools ) {
   for ( size_t i = 0; i < n_tools; i++ ) {
     this->tools_info.emplace_back( tools[i].doc, tools[i].root ); 
   }
+}
+
+void memory::set_model_name( const std::string& name ) {
+  model_name = name;
 }
 
 void memory::init( ) {

@@ -1,11 +1,12 @@
 #include "database.h"
 #include "json.h"
 #include <simdjson.h>
+// #include <b64/cencode.h>
 extern "C" {
-  #include <b64/cencode.h>
+#include <b64/cencode.h>
 }
 
-#if !defined( _ANI_CONVERSE_H )
+#if !defined( _ANI_CHAT_MEMORY_H )
 
 struct tool_data {
   yyjson_doc* doc;
@@ -18,8 +19,7 @@ class memory {
 public:
   void init( );
   std::string_view create_tool_call( std::string_view name, std::string_view func_desc, std::string_view param_desc );
-  std::string_view load_conversation_beta( );
-  std::string_view load_conversation( );
+  std::string_view load_chat( );
   void load_system_prompt( yyjson_mut_doc* doc, yyjson_mut_val* msgs );
   bool load_tool_calls( yyjson_mut_doc* doc, yyjson_mut_val* msg, statement* stmt );
   void load_images( yyjson_mut_doc* doc, yyjson_mut_val* images );
@@ -29,10 +29,11 @@ public:
   void store( std::string_view role, std::string_view mtype, std::string_view content );
   void store( std::string_view role, std::string_view mtype, std::string_view content, std::string_view images );
   void store_system_prompt( std::string_view prompt );
-  // void store_tool_result( std::string_view tool_name, std::string_view data );
   void store_tool_result( std::string_view tool_name, std::string_view tool_id, std::string_view data );
+  void store_tool_result( std::string_view tool_name, std::string_view tool_id, std::string_view data, std::string_view images );
   void store_image( const std::vector<std::string_view>& path );
   void add_tools( tool_data* tools, size_t n_tools );
+  void set_model_name( const std::string& name );
   void clear_tools( );
 public:
   memory( );
@@ -50,8 +51,18 @@ private:
   std::string role, message_type, content, images;
   std::string system_prompt;
   simdjson::ondemand::parser parser;
+  std::string model_name;
+
+  // for seperate class tree
+  yyjson_mut_doc* doc;
+  yyjson_mut_val* root;
+  yyjson_mut_val* messages;
+public:
+  yyjson_mut_val* load_chat_tree( yyjson_mut_doc* doc );
+  void add_chat( std::string_view role, std::string_view content, std::string_view images );
+  void add_chat( std::string_view role, std::string_view content );
 };
 
-#define _ANI_CONVERSE_H
+#define _ANI_CHAT_MEMORY_H
 #endif
 
