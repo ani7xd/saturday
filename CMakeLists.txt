@@ -12,6 +12,11 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
+# add_subdirectory(
+#     ${CMAKE_CURRENT_SOURCE_DIR}/../marionette
+#     ${CMAKE_CURRENT_BINARY_DIR}/marionette
+# )
+
 add_executable( saturday
                 main.cpp 
                 ${SOURCES} )
