@@ -31,6 +31,7 @@ namespace webdriver {
   constexpr std::string_view navigate = "WebDriver:Navigate";
   constexpr std::string_view new_window = "WebDriver:NewWindow";
   constexpr std::string_view switch_to_window = "WebDriver:SwitchToWindow";
+  constexpr std::string_view get_window_handle = "WebDriver:GetWindowHandle";
   constexpr std::string_view back = "WebDriver:Back";
   constexpr std::string_view forward = "WebDriver:Forward";
   constexpr std::string_view refresh = "WebDriver:Refresh";
