@@ -107,26 +107,6 @@ struct server_response {
   bool is_error( );
 };
 
-// enum class action_source : uint8_t
-// {
-//   keyboard,
-//   mouse,
-//   wheel
-// };
-
-// enum class action_type : uint8_t
-// {
-//   press,
-//   key_down,
-//   key_up,
-//   move,
-//   mouse_down,
-//   mouse_up,
-//   click,
-//   scroll,
-//   pause
-// };
-
 struct browser_action {
   std::string source;
   std::string actions;
@@ -160,6 +140,7 @@ public:
   void load_key_map( );
 public:
   void create_new_tab( );
+  void get_window_handle( );
   void switch_to_window( std::string_view handle );
   void navigate_window( std::string_view url );
   void window_go_back( );
@@ -173,10 +154,12 @@ public:
   void screenshot( std::vector<std::byte>& out, bool full_page = false );
   void screenshot( std::string_view uuid, std::vector<std::byte>& out, bool full_page = false );
   // for now just string view, struct next
+  void scroll_into_view( std::string_view uuid );
   void perform_actions( std::string_view uuid, packet& p );
   // struct one
   void perform_actions( browser_action* actions, size_t n_actions, packet& p );
-
+  // implementations of mouse and keyboard actions using browser_actions
+  void keyboard_type( std::string_view uuid, std::string_view content );
 public:
   void get_attr_name( std::string_view tag );
   void get_element_name( std::string_view tag );

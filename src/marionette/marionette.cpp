@@ -1,5 +1,19 @@
 #include "../../include/marionette/marionette.h"
 
+// void marionette::keyboard_type( std::string_view uuid, std::string_view content ) {
+//   pack.create_doc_new( );
+//   yyjson_mut_val* args = yyjson_mut_obj( pack.doc );
+//   {
+    
+//   }
+//   send_command( webdriver::perform_actions, args, pack );
+//   recv_reply( );
+//   error::debug( parse_context( session, reply ) );
+//   if ( reply.is_error( ) ) {
+//     throw error::excpt( -1, "keyboard type error", reply.error );
+//   } 
+// }
+
 void marionette::perform_actions( browser_action* actions, size_t n_actions, packet& p ) {
   p.create_doc_new( );
   yyjson_mut_val* args = yyjson_mut_obj( p.doc );
@@ -326,6 +340,20 @@ void marionette::press_key( std::string_view uuid, std::string_view key ) {
   }
 }
 
+void marionette::scroll_into_view( std::string_view uuid ) {
+  std::string args = R"({"element-6066-11e4-a52e-4f735466cecf":")";
+  args += uuid;
+  args += R"("})";
+  execute_js( R"(arguments[0].scrollIntoView({
+    behavior: "instant",
+    block: "center",
+    inline: "center"
+  });)",
+    args,
+    pack
+);
+}
+
 void marionette::execute_js( std::string_view script, std::string_view script_args, packet& p ) {
   p.create_doc_new( );
   yyjson_mut_val* args = yyjson_mut_obj( p.doc );
@@ -389,7 +417,7 @@ void marionette::navigate_window( std::string_view url ) {
 }
 
 void marionette::switch_to_window( std::string_view handle ) {
-  this->msg_id++;
+  // this->msg_id++;
   pack.create_doc_new( );
   yyjson_mut_val* args = yyjson_mut_obj( pack.doc );
   {
@@ -405,7 +433,7 @@ void marionette::switch_to_window( std::string_view handle ) {
 }
 
 void marionette::window_go_back( ) {
-  this->msg_id++;
+  // this->msg_id++;
   pack.create_doc_new( );
   yyjson_mut_val* args = yyjson_mut_obj( pack.doc );
   {
@@ -422,7 +450,7 @@ void marionette::window_go_back( ) {
 }
 
 void marionette::window_go_forward( ) {
-  this->msg_id++;
+  // this->msg_id++;
   pack.create_doc_new( );
   yyjson_mut_val* args = yyjson_mut_obj( pack.doc );
   send_command( webdriver::forward, args, pack );
@@ -492,6 +520,22 @@ void marionette::create_session( ) {
   this->json = this->parser.iterate( this->j_str );
   this->session_id = this->json["sessionId"].get_string( ).value( );
   std::cout << "[marionette] created session id : " << this->session_id << "\n"; 
+}
+
+void marionette::get_window_handle( ) {
+  pack.create_doc_new( );
+  yyjson_mut_val* args = yyjson_mut_obj( pack.doc );
+  {
+    
+  }
+  send_command( webdriver::get_window_handle, args, pack );
+  recv_reply( );
+  error::debug( parse_context( session, reply ) );
+  if ( reply.is_error( ) )
+    throw error::excpt( -1, "get_window_handle error", reply.error );
+  this->j_str = this->reply.json;
+  this->json = this->parser.iterate( this->j_str );
+  this->tab_handle = this->json["value"].get_string( ).value( );
 }
 
 void marionette::create_base_packet( size_t id, std::string_view name, packet* p ) {
