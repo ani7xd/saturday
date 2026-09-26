@@ -44,7 +44,7 @@ void tool_manager::call_tool( tool_context* context, tool_result* ret ) {
   }
   catch ( const error::excpt& excpt ) 
   {
-    simdjson::ondemand::parser parser;
+    // simdjson::ondemand::parser parser;
     // auto j_str = excpt.err_str;
     // auto json = parser.iterate( j_str );
     // std::string_view err = json["error"].get_string( ).value( );
@@ -498,6 +498,15 @@ std::vector<tool_json>* tool_manager::get_tools( ) {
   return &this->tools;
 }
 
+
+float similarity( std::span<const float> a, std::span<const float> b) 
+{
+  float result = 0.0f;
+  for ( size_t i = 0; i < a.size( ); ++i )
+    result += a[i] * b[i];
+  return result;
+}
+
 void tool_manager::load_tools_map( ) {
   // a more sexy idea would be to add call_tool() with 
   // unordered map of arguements, and pass parameters to tool
@@ -564,7 +573,6 @@ void tool_manager::load_tools_map( ) {
   });
   
   tool_map.emplace( "edit_file", [&](tool_context* context) {
-    // parse_arguements( context );
     std::string path{ context->json["file"].get_string( ).value( ) };
     ssize_t c = 1;
     size_t o = 0;
@@ -646,7 +654,6 @@ void tool_manager::load_tools_map( ) {
         context->tool_id, 
         context->result.str
       );
-      context->result.clear( );
     }
     catch ( const error::excpt& e ) 
     {
@@ -654,65 +661,169 @@ void tool_manager::load_tools_map( ) {
     }
   });
 
-  tool_map.emplace( "browser_element_click", [&](tool_context* context) {
+  tool_map.emplace( "browser_click", [&](tool_context* context) {
+    calling_tool( "clicking element..." );
     try {
-      auto id = error::require( context->json["id"].get_uint64( ), "id" );
-      calling_tool( "clicking element (" + std::to_string( id ) + " )..." );
-      if ( id >= elements.size( ) )
-        throw error::excpt( -1, "invalid element id", "element id out of range" );
-      puppet.element_click( elements[id].uuid );
-      context->result.str = "clicked element (";
-      context->result.str += std::to_string( id );
-      context->result.str += ") in tab";
+      auto target = error::require( context->json["target"].get_uint64( ), "target" );
+      if ( target >= elements.size( ) )
+        throw error::excpt( -1, "invalid browser element", "element ID is out of range" );
+      browser_action action;
+      action.source = "mouse";
+      action.actions = "click";
+      action.uuid = elements[target].uuid;
+      action.button = 0;
+      packet p;
+      puppet.scroll_into_view( elements[target].uuid );
+      puppet.perform_actions( &action, 1, p );
+      context->result.str.clear( );
+      context->result.str = "clicked element (" + std::to_string( target ) + ")";
       context->context->store_tool_result( 
         context->tool_name, 
         context->tool_id, 
         context->result.str
       );
-      context->result.clear( );
-    }
-    catch ( const error::excpt& e ) 
-    {
-      throw error::excpt( e.err_code, "browser_element_click json error", e.msg, e.err_str );
-    }
+      }
+      catch ( const error::excpt& e ) 
+      {
+        throw error::excpt( e.err_code, "browser_click json error", e.msg, e.err_str );
+      }
   });
 
-  tool_map.emplace( "browser_element_fill", [&](tool_context* context) {
+  tool_map.emplace( "browser_type", [&](tool_context* context)
+  {
+    calling_tool("typing into element...");
     try 
     {
-      auto id = error::require( context->json["id"].get_uint64( ), "id" );
+      auto target = error::require( context->json["target"].get_uint64( ), "target" );
       std::string_view text = error::require( context->json["text"].get_string( ), "text" );
-      calling_tool( "filling element ( " + std::to_string( id ) + " ) with content..." );
-      puppet.fill( elements[id].uuid, text );
-      context->result.str = "filled element (";
-      context->result.str += std::to_string( id );
-      context->result.str += ") with text in tab";
-      context->context->store_tool_result( 
+      if ( target >= elements.size( ) )
+        throw error::excpt( -1, "invalid browser element", "element ID is out of range" );
+      browser_action actions[2]{ };
+      actions[0].source = "mouse";
+      actions[0].actions = "click";
+      actions[0].uuid = elements[target].uuid;
+      actions[0].button = 0;
+
+      actions[1].source = "keyboard";
+      actions[1].actions = "text";
+      actions[1].text = text;
+      packet p;
+      puppet.scroll_into_view( elements[target].uuid );
+      puppet.perform_actions( actions, 2, p );
+      context->result.str.clear( );
+      context->result.str = "typed text into element (" + std::to_string(target) + ")"; 
+      context->context->store_tool_result(
         context->tool_name, 
-        context->tool_id,
+        context->tool_id, 
         context->result.str
       );
-      context->result.clear( );
     }
     catch ( const error::excpt& e ) 
     {
-      throw error::excpt( e.err_code, "browser_element_fill error", e.msg, e.err_str );
+      throw error::excpt( e.err_code, "browser_type json error", e.msg, e.err_str );
     }
   });
 
-  tool_map.emplace( "browser_observe", [&](tool_context* context) {
-    calling_tool( "observing page..." );
+  // replace with primitive as browser_actions
+  // tool_map.emplace( "browser_element_click", [&](tool_context* context) {
+  //   try {
+  //     auto id = error::require( context->json["id"].get_uint64( ), "id" );
+  //     calling_tool( "clicking element (" + std::to_string( id ) + " )..." );
+  //     if ( id >= elements.size( ) )
+  //       throw error::excpt( -1, "invalid element id", "element id out of range" );
+  //     puppet.element_click( elements[id].uuid );
+  //     context->result.str = "clicked element (";
+  //     context->result.str += std::to_string( id );
+  //     context->result.str += ") in tab";
+  //     context->context->store_tool_result( 
+  //       context->tool_name, 
+  //       context->tool_id, 
+  //       context->result.str
+  //     );
+  //     context->result.clear( );
+  //   }
+  //   catch ( const error::excpt& e ) 
+  //   {
+  //     throw error::excpt( e.err_code, "browser_element_click json error", e.msg, e.err_str );
+  //   }
+  // });
+
+  // replace with backend as browser_actions
+  // tool_map.emplace( "browser_element_fill", [&](tool_context* context) {
+  //   try 
+  //   {
+  //     auto id = error::require( context->json["id"].get_uint64( ), "id" );
+  //     std::string_view text = error::require( context->json["text"].get_string( ), "text" );
+  //     calling_tool( "filling element ( " + std::to_string( id ) + " ) with content..." );
+  //     puppet.fill( elements[id].uuid, text );
+  //     context->result.str = "filled element (";
+  //     context->result.str += std::to_string( id );
+  //     context->result.str += ") with text in tab";
+  //     context->context->store_tool_result( 
+  //       context->tool_name, 
+  //       context->tool_id,
+  //       context->result.str
+  //     );
+  //     context->result.clear( );
+  //   }
+  //   catch ( const error::excpt& e ) 
+  //   {
+  //     throw error::excpt( e.err_code, "browser_element_fill error", e.msg, e.err_str );
+  //   }
+  // });
+
+  // tool_map.emplace( "browser_observe", [&](tool_context* context) {
+  //   calling_tool( "observing page..." );
+  //   puppet.observe( js_script, this->elements );
+  //   context->result.str.clear( );
+  //   for ( auto& e : elements ) { 
+  //     to_agent( e, context->result.str );
+  //   }
+  //   context->context->store_tool_result( 
+  //     context->tool_name,
+  //     context->tool_id,
+  //     context->result.str
+  //   );
+  //   context->result.clear( );
+  // });
+
+  tool_map.emplace( "browser_search_observe", [&](tool_context* context) {
+    calling_tool( "observing page with search ranking..." );
+    std::string query;
+    query = context->json["query"].get_string( ).value( );
+    elements.clear( );
     puppet.observe( js_script, this->elements );
-    context->result.str.clear( );
-    for ( auto& e : elements ) { 
-      to_agent( e, context->result.str );
+
+    std::vector<std::string> lines;
+    for ( auto& e : elements ) {
+      std::string line;
+      to_embedding( e, line );
+      lines.push_back( std::move( line ) );
     }
+    std::vector<std::vector<float>> embeddings;
+    embed_multiple_lines( lines, embeddings );
+    std::vector<float> embed;
+    embed_line( query, embed );
+    std::vector<browser_match> matches;
+    size_t index = 0;
+    for ( auto& embeds : embeddings ) {
+      matches.emplace_back( index, similarity( embed, embeds ) );
+      index++;
+    }
+    std::sort( matches.begin( ), matches.end( ), [&]( const auto& a, const auto& b ) {
+      return a.similar > b.similar;
+    });
+    context->result.str.clear( );
+    size_t top_n = std::min<size_t>( 40, matches.size( ) );
+    for ( size_t i = 0; i < top_n; i++ ) {
+      to_agent( elements[matches[i].index], context->result.str );
+    }
+
     context->context->store_tool_result( 
       context->tool_name,
       context->tool_id,
       context->result.str
     );
-    context->result.clear( );
   });
 
   tool_map.emplace( "browser_screenshot", [&](tool_context* context) {
@@ -792,6 +903,113 @@ void tool_manager::load_tools_map( ) {
   });
 }
 
+void tool_manager::embed_multiple_lines( const std::vector<std::string_view>& lines, std::vector<std::vector<float>>& out ) {
+  yyjson_mut_arr_clear( input );
+  for ( auto& line : lines ) { 
+    if ( !line.empty( ) )
+      yyjson_mut_arr_add_strncpy( embed_doc, input, line.data( ), line.size( ) );
+  }
+  if ( e_data != nullptr ) free( e_data );
+  e_data = yyjson_mut_write( embed_doc, 0, &e_len );
+  embed_cl.set_post_data( { e_data, e_len } );
+  embed_buffer.clear( );
+  embed_cl.request( );
+  if ( e_data != nullptr ) {
+    free( e_data );
+    e_data = nullptr;
+  }
+  simdjson::ondemand::parser parser;
+  simdjson::padded_string j_str = embed_buffer;
+  auto j = parser.iterate( j_str );
+  auto arr = j["embeddings"].get_array( ).value( );
+  for ( auto a : arr ) {
+    auto datas = a.get_array( ).value( );
+    std::vector<float> line;
+    for ( auto d : datas )
+      line.push_back( d.get_double( ).value( ) );
+    out.emplace_back( std::move( line ) );
+  }
+}
+
+void tool_manager::embed_multiple_lines( const std::vector<std::string>& lines, std::vector<std::vector<float>>& out ) {
+  yyjson_mut_arr_clear( input );
+  for ( auto& line : lines ) { 
+    if ( !line.empty( ) )
+      yyjson_mut_arr_add_strncpy( embed_doc, input, line.data( ), line.size( ) );
+  }
+  if ( e_data != nullptr ) free( e_data );
+  e_data = yyjson_mut_write( embed_doc, 0, &e_len );
+  embed_cl.set_post_data( { e_data, e_len } );
+  embed_buffer.clear( );
+  embed_cl.request( );
+  if ( e_data != nullptr ) {
+    free( e_data );
+    e_data = nullptr;
+  }
+  simdjson::ondemand::parser parser;
+  simdjson::padded_string j_str = embed_buffer;
+  auto j = parser.iterate( j_str );
+  auto arr = j["embeddings"].get_array( ).value( );
+  for ( auto a : arr ) {
+    auto datas = a.get_array( ).value( );
+    std::vector<float> line;
+    for ( auto d : datas )
+      line.push_back( d.get_double( ).value( ) );
+    out.emplace_back( std::move( line ) );
+  }
+}
+
+void tool_manager::embed_line( const std::string& line, std::vector<float>& out ) {
+  yyjson_mut_arr_clear( input );
+  yyjson_mut_arr_add_strncpy( embed_doc, input, line.data( ), line.size( ) );
+  if ( e_data != nullptr ) free( e_data );
+  e_data = yyjson_mut_write( embed_doc, 0, &e_len );
+  embed_cl.set_post_data( { e_data, e_len } );
+  embed_buffer.clear( );
+  embed_cl.request( );
+  if ( e_data != nullptr ) {
+    free( e_data );
+    e_data = nullptr;
+  }
+
+  simdjson::ondemand::parser parser;
+  simdjson::padded_string j_str = embed_buffer;
+  auto j = parser.iterate( j_str );
+  auto arr = j["embeddings"].get_array( ).value( );
+  for ( auto e : arr ) {
+    auto values = e.get_array( ).value( );
+    for ( auto value : values ) {
+      out.emplace_back( value.get_double( ).value( ) );
+    }
+    break;
+  }
+}
+
+void tool_manager::embed_line( std::string_view line, std::vector<float>& out ) {
+  yyjson_mut_arr_clear( input );
+  yyjson_mut_arr_add_strncpy( embed_doc, input, line.data( ), line.size( ) );
+  if ( e_data != nullptr ) free( e_data );
+  e_data = yyjson_mut_write( embed_doc, 0, &e_len );
+  embed_cl.set_post_data( { e_data, e_len } );
+  embed_buffer.clear( );
+  embed_cl.request( );
+  if ( e_data != nullptr ) {
+    free( e_data );
+    e_data = nullptr;
+  }
+  simdjson::ondemand::parser parser;
+  simdjson::padded_string j_str = embed_buffer;
+  auto j = parser.iterate( j_str );
+  auto arr = j["embeddings"].get_array( ).value( );
+  for ( auto e : arr ) {
+    auto values = e.get_array( ).value( );
+    for ( auto value : values ) {
+      out.emplace_back( value.get_double( ).value( ) );
+    }
+    break;
+  }
+}
+
 void tool_manager::load_tools( const std::filesystem::path& path ) {
   load_tools_map( );
   std::ifstream f;
@@ -839,8 +1057,23 @@ void tool_manager::init( ) {
 
   puppet.init( );
   puppet.create_session( );
-  puppet.create_new_tab( );
+  puppet.get_window_handle( );
   puppet.switch_to_window( puppet.tab_handle );
+
+  embed_cl.initialize( );
+  embed_cl.set_url( "http://localhost:11434/api/embed" );
+  embed_cl.set_http_method_post( );
+  embed_cl.set_body_write_cb( web_write_cb );
+  embed_cl.set_body_cb_data( &embed_buffer );
+  embed_cl.set_custom_option_list( "Content-Type", "application/json" );
+  embed_cl.set_custom_options( );
+  embed_doc = yyjson_mut_doc_new( nullptr );
+  embed_root = yyjson_mut_obj( embed_doc );
+  yyjson_mut_doc_set_root( embed_doc, embed_root );
+  yyjson_mut_obj_add_str( embed_doc, embed_root, "model", "qwen3-embedding:0.6b" );
+  yyjson_mut_obj_add_sint( embed_doc, embed_root, "keep_alive", -1 );
+  input = yyjson_mut_arr( embed_doc );
+  yyjson_mut_obj_add_val( embed_doc, embed_root, "input", input );
 }
 
 tool_manager::tool_manager( ) {
@@ -900,7 +1133,7 @@ void calling_tool( std::string_view str ) {
 }
 
 void tool_manager::to_agent( browser_element& e, std::string& out ) {
-  if ( !e.visible ) return;
+  // if ( !e.visible ) return;
   out += '[';
   out += std::to_string(e.id);
   out += "] ";
@@ -961,6 +1194,46 @@ void tool_manager::to_agent( browser_element& e, std::string& out ) {
       out += " | clickable";
 
   out += '\n';
+}
+
+void tool_manager::to_embedding( const browser_element& e, std::string& out )
+{
+  out += e.tag;
+
+  if (!e.role.empty()) {
+      out += " | role=";
+      out += e.role;
+  }
+
+  if (!e.type.empty()) {
+      out += " | type=";
+      out += e.type;
+  }
+
+  if (!e.name.empty()) {
+      out += " | name=";
+      out += e.name;
+  }
+
+  if (!e.text.empty()) {
+      out += " | text=";
+      out += e.text;
+  }
+
+  if (!e.placeholder.empty()) {
+      out += " | placeholder=";
+      out += e.placeholder;
+  }
+
+  if (!e.aria_label.empty()) {
+      out += " | aria=";
+      out += e.aria_label;
+  }
+
+  if (!e.href.empty()) {
+      out += " | href=";
+      out += e.href;
+  }
 }
 
 

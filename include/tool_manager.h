@@ -79,6 +79,12 @@ struct client_worker {
   void* ctx;
 };
 
+struct browser_match {
+  size_t index;
+  float similar;
+  browser_match( size_t _index, float _similar ) : index( _index ), similar( _similar ) { };
+};
+
 int client_write_cb( void* ptr, size_t len, void* ctx );
 size_t web_write_cb( char* ptr, size_t size, size_t nmemb, void* userdata );
 void calling_tool( std::string_view str );
@@ -121,7 +127,24 @@ public:
   std::string_view trim_html_result( std::string_view data, std::string& out );
   void extract_from_html( lxb_dom_node_t* node, std::string& out );
   void to_agent( browser_element& e, std::string& out );
+  void to_agent_vector( browser_element& e, std::string& out );
+
+  // need to move to dedicated class
+  void to_embedding( const browser_element& e, std::string& out );
+  void embed_line( const std::string& line, std::vector<float>& out );
+  void embed_line( std::string_view line, std::vector<float>& out );
+  void embed_multiple_lines( const std::vector<std::string_view>& lines, std::vector<std::vector<float>>& out );
+  void embed_multiple_lines( const std::vector<std::string>& lines, std::vector<std::vector<float>>& out );
 public:
+  // testing for now
+  http embed_cl;
+  std::string embed_buffer;
+  yyjson_mut_doc* embed_doc;
+  yyjson_mut_val* embed_root;
+  yyjson_mut_val* input;
+  size_t e_len;
+  char* e_data;
+  //
   marionette puppet;
   std::vector<browser_element> elements;
   std::vector<browser_action> actions;
